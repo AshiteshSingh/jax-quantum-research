@@ -83,6 +83,13 @@ qauntum machine learning/
 │   ├── plots/                    ← TPU watermarked plots (tracked)
 │   └── results/                  ← TPU JSON, CSV results, and Tee logs (tracked)
 │
+├── grover_simulation/            # === GROVER'S ALGORITHM SIMULATION ===
+│   ├── 20qubits.py               ← Grover 20-qubit standard simulation
+│   ├── 30qubits.py               ← Grover 30-qubit high-performance simulation
+│   ├── 36qubits.py               ← Grover 36-qubit extreme-scale simulation
+│   ├── fullstatevector20qubits.py ← Full-state vector brute-force 20-qubit simulation
+│   └── [plots/*.png]             ← Generated Grover probability waves & scaling metrics
+│
 ├── tests/                        ← Pytest verification suite (gates, AD gradients)
 └── requirements.txt              ← Python environment dependencies
 ```
@@ -314,6 +321,19 @@ The two acceleration branches exhibit distinct engineering tradeoffs and compute
   $$\mathcal{F}(p) \approx (1 - p)^{N_{\text{gates}}}$$
   where $N_{\text{gates}}$ represents the total number of noisy single and two-qubit operations, validating the accuracy of the Kraus operator mapping.
 
+#### D. Grover's Algorithm Simulation On Cloud TPU v6e-64chip
+* **Grover Complexity & Search Space:** Grover's algorithm searches an unstructured database of size $N = 2^n$ in $\mathcal{O}(\sqrt{N})$ iterations. For $n=36$ qubits, the search space consists of:
+  $$N = 2^{36} \approx 6.87 \times 10^{10} \text{ States}$$
+* **Mathematical Iteration Bound:** The optimal number of query applications required to amplify the success probability to near unity is:
+  $$k_{\text{opt}} \approx \left\lfloor \frac{\pi}{4}\sqrt{2^{36}} \right\rfloor = 205,887 \text{ Iterations}$$
+* **TPU v6e-64chip Distributed Simulation:** Simulating 36 qubits using full-state vector representation consumes exactly **549.76 GB** of raw memory.
+  * By partitioning this state vector using JAX `PositionalSharding` across a **64-chip Cloud TPU v6e mesh** (providing 2.0 TB of aggregate HBM3 memory), each physical chip manages exactly 8.59 GB.
+  * The parallelized JAX unitary application contract matrices operate at near-peak FLOPs, accelerating all 205,887 oracle-diffusion cycles to retrieve the target state $|\omega\rangle = |111\dots1\rangle$ with an astronomical success probability:
+    $$P(\omega) \approx 99.9999999985\%$$
+* **MPS Tensor Network Approximation Limits:** Using Matrix Product States (MPS), the TPU mesh evaluated classical truncation thresholds. Our results demonstrate that because Grover's diffusion operator is highly non-local (global householder reflection $R_s = 2|s\rangle\langle s| - I$), it rapidly builds multi-qubit bipartite entanglement entropy:
+  $$S(A:B) \propto \log(\chi)$$
+  where $\chi$ is the bond dimension. This drives MPS fidelity to a sharp breaking point, validating that global quantum search is highly resilient to standard tensor-network classical approximations.
+
 ---
 
 ## 📊 Hardware Benchmarks & Performance Comparison
@@ -359,6 +379,28 @@ These plots represent high-fidelity and noise-resilient large-scale simulations 
 | ![Noise Simulation TPU](tpu/plots/05_noise_sim_20260524_111303.png) | ![NISQ Benchmark TPU](tpu/plots/06_nisq_benchmark_20260524_111303.png) |
 | **Barren Plateaus (TPU)** | **TPU 33-Qubit Scaling Benchmark** |
 | ![Barren Plateau TPU](tpu/plots/07_barren_plateau_20260524_111303.png) | ![TPU Benchmark](tpu/plots/tpu_benchmark_20260524_110111.png) |
+
+---
+
+### ☁️ Grover's Algorithm Simulation Results (Cloud TPU v6e-64chip)
+These plots represent high-qubit Grover simulations (up to **36 qubits** / $2^{36} \approx 6.87 \times 10^{10}$ search states) and Matrix Product State (MPS) tensor network approximation metrics evaluated on the Google Cloud TPU v6e cluster:
+
+| Grover Probability Wave (30 Qubits) | Grover Probability Wave (36 Qubits) |
+|:---:|:---:|
+| ![Grover 30q](grover_simulation/30qubits.png) | ![Grover 36q](grover_simulation/36qubits.png) |
+| **Grover 20q Full Measurement Profile** | **Grover 20q Brute-Force Measurement** |
+| ![Grover 20q Full](grover_simulation/grover_20q_full.png) | ![Grover 20q Bruteforce](grover_simulation/grover_20q_bruteforce.png) |
+
+#### 🕸 Matrix Product State (MPS) Tensor Network Dynamics
+When simulating Grover's search using Matrix Product States (MPS) on Cloud TPU VM clusters, we study the entanglement entropy growth, bond dimension scaling, and fidelity thresholds across circuit depths:
+
+| Entanglement Entropy vs. Depth | Strong Simulation Scaling Profile |
+|:---:|:---:|
+| ![Entropy Depth](grover_simulation/exp1_entropy_depth.png) | ![Strong Results](grover_simulation/exp2_strong_results.png) |
+| **Bond Dimension Scaling Behavior** | **Fidelity Threshold Breaking Point** |
+| ![Bond Scaling](grover_simulation/exp3_bond_scaling.png) | ![Breaking Point](grover_simulation/exp4_breaking_point.png) |
+| **Final State Fidelity vs. Bond Dimension** | |
+| ![Fidelity Bond](grover_simulation/exp5_fidelity.png) | |
 
 ---
 
