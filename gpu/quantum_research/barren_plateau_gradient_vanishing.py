@@ -154,8 +154,8 @@ def compute_2d_landscape(n: int = 4, depth: int = 2, resolution: int = 60):
 
 def run_barren_plateau_study():
     ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-    os.makedirs("results", exist_ok=True)
-    os.makedirs("examples/plots", exist_ok=True)
+    os.makedirs("gpu/results", exist_ok=True)
+    os.makedirs("gpu/plots", exist_ok=True)
 
     print()
     print("╔══════════════════════════════════════════════════════════════════════╗")
@@ -194,7 +194,7 @@ def run_barren_plateau_study():
         "depth_study": {"depth_range": depth_range, "results": depth_results},
         "landscape": {"theta": theta.tolist(), "Z": Z.tolist()},
     }
-    json_path = f"results/barren_plateau_{ts}.json"
+    json_path = f"gpu/results/barren_plateau_{ts}.json"
     with open(json_path, 'w') as f:
         json.dump(out, f, indent=2)
     print(f"  📄 Data saved → {json_path}")

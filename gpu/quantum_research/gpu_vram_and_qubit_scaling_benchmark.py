@@ -215,8 +215,8 @@ def run_full_benchmark():
     device_str = str(jax.devices()[0])
     vram_total = get_vram_total_mib()
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    os.makedirs("results", exist_ok=True)
-    os.makedirs("examples/plots", exist_ok=True)
+    os.makedirs("gpu/results", exist_ok=True)
+    os.makedirs("gpu/plots", exist_ok=True)
 
     print()
     print("╔══════════════════════════════════════════════════════════════════════╗")
@@ -305,7 +305,7 @@ def run_full_benchmark():
           f"({results[-1]['state_size_str']} state vector)\n")
 
     # ── Save CSV ────────────────────────────────────────────────────────────
-    csv_path = f"results/benchmark_{timestamp}.csv"
+    csv_path = f"gpu/results/benchmark_{timestamp}.csv"
     with open(csv_path, 'w', newline='') as f:
         writer = csv.DictWriter(f, fieldnames=results[0].keys())
         writer.writeheader()
@@ -313,7 +313,7 @@ def run_full_benchmark():
     print(f"  📄 CSV results saved → {csv_path}")
 
     # ── Save JSON ───────────────────────────────────────────────────────────
-    json_path = f"results/benchmark_{timestamp}.json"
+    json_path = f"gpu/results/benchmark_{timestamp}.json"
     meta = {
         "timestamp": timestamp,
         "backend": backend,
@@ -472,7 +472,7 @@ def plot_benchmark_results(results, timestamp, backend, device_str):
         color=PALETTE["text"], fontsize=14, fontweight='bold', y=0.98
     )
 
-    plot_path = f"examples/plots/benchmark_{timestamp}.png"
+    plot_path = f"gpu/plots/benchmark_{timestamp}.png"
     plt.savefig(plot_path, dpi=180, bbox_inches='tight', facecolor=PALETTE["bg"])
     plt.close()
     print(f"  🖼  Multi-panel benchmark plot saved → {plot_path}")

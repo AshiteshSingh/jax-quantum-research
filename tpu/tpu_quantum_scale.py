@@ -39,8 +39,8 @@ warnings.filterwarnings("ignore", category=UserWarning)     # suppress all matpl
 # Global timestamp, output directories
 # ─────────────────────────────────────────────────────────────────────────────
 TS = datetime.now().strftime("%Y%m%d_%H%M%S")
-os.makedirs("results",       exist_ok=True)
-os.makedirs("examples/plots", exist_ok=True)
+os.makedirs("tpu/results",       exist_ok=True)
+os.makedirs("tpu/plots",         exist_ok=True)
 
 BACKEND = jax.default_backend()
 DEVICES = jax.devices()
@@ -208,12 +208,12 @@ def run_state_prep():
     ax.set_title("⚛  GHZ State Preparation — Fidelity Convergence")
     ax.legend(facecolor=P["panel"],edgecolor=P["border"],labelcolor=P["text"])
     theme(fig, ax)
-    path = f"examples/plots/01_state_prep_{TS}.png"
+    path = f"tpu/plots/01_state_prep_{TS}.png"
     plt.savefig(path, dpi=180, bbox_inches="tight", facecolor=P["bg"]); plt.close()
     print(f"\n  🖼  Plot saved → {path}")
     json.dump({"experiment":"GHZ_state_prep","loss_history":hist},
-              open(f"results/state_prep_{TS}.json","w"), indent=2)
-    print(f"  📄 JSON saved → results/state_prep_{TS}.json")
+              open(f"tpu/results/state_prep_{TS}.json","w"), indent=2)
+    print(f"  📄 JSON saved → tpu/results/state_prep_{TS}.json")
 
 # ═════════════════════════════════════════════════════════════════════════════
 # EXPERIMENT 2 — Variational Quantum Classifier (XOR)
@@ -297,12 +297,12 @@ def run_vqc():
     theme(fig, ax2)
     fig.suptitle(f"Variational Quantum Classifier — {BACKEND.upper()} │ {TS}",
                  color=P["text"], fontsize=13, fontweight="bold")
-    path = f"examples/plots/02_vqc_{TS}.png"
+    path = f"tpu/plots/02_vqc_{TS}.png"
     plt.savefig(path, dpi=180, bbox_inches="tight", facecolor=P["bg"]); plt.close()
     print(f"\n  🖼  Plot saved → {path}")
     json.dump({"experiment":"VQC_XOR","loss_history":hist},
-              open(f"results/vqc_{TS}.json","w"), indent=2)
-    print(f"  📄 JSON saved → results/vqc_{TS}.json")
+              open(f"tpu/results/vqc_{TS}.json","w"), indent=2)
+    print(f"  📄 JSON saved → tpu/results/vqc_{TS}.json")
 
 # ═════════════════════════════════════════════════════════════════════════════
 # EXPERIMENT 3 — VQE: H₂ Ground State Energy
@@ -457,12 +457,12 @@ def run_vqe():
 
     fig.suptitle(f"VQE — H₂ Ground State │ JAX Quantum Simulator │ {BACKEND.upper()} │ {TS}",
                  color=P["text"], fontsize=13, fontweight="bold", y=0.97)
-    path = f"examples/plots/vqe_{TS}.png"
+    path = f"tpu/plots/vqe_{TS}.png"
     plt.savefig(path, dpi=180, bbox_inches="tight", facecolor=P["bg"]); plt.close()
     print(f"\n  🖼  VQE plot saved → {path}")
     json.dump({"fci_energy":FCI_ENERGY,"history":hist},
-              open(f"results/vqe_{TS}.json","w"), indent=2)
-    print(f"  📄 VQE JSON saved → results/vqe_{TS}.json")
+              open(f"tpu/results/vqe_{TS}.json","w"), indent=2)
+    print(f"  📄 VQE JSON saved → tpu/results/vqe_{TS}.json")
 
 # ═════════════════════════════════════════════════════════════════════════════
 # EXPERIMENT 4 — QAOA MaxCut (6-node weighted graph)
@@ -588,12 +588,12 @@ def run_qaoa():
 
     fig.suptitle(f"QAOA MaxCut │ JAX │ {BACKEND.upper()} │ {TS}",
                  color=P["text"],fontsize=13,fontweight="bold",y=0.97)
-    path = f"examples/plots/qaoa_{TS}.png"
+    path = f"tpu/plots/qaoa_{TS}.png"
     plt.savefig(path, dpi=180, bbox_inches="tight", facecolor=P["bg"]); plt.close()
     print(f"\n  🖼  QAOA plot saved → {path}")
     json.dump({"classical_maxcut":CLASS_CUT,"graph_edges":EDGES,"results":all_res},
-              open(f"results/qaoa_{TS}.json","w"), indent=2)
-    print(f"  📄 QAOA JSON saved → results/qaoa_{TS}.json")
+              open(f"tpu/results/qaoa_{TS}.json","w"), indent=2)
+    print(f"  📄 QAOA JSON saved → tpu/results/qaoa_{TS}.json")
 
 # ═════════════════════════════════════════════════════════════════════════════
 # EXPERIMENT 5 — Quantum Noise Simulation (Monte Carlo Trajectories)
@@ -730,13 +730,13 @@ def run_noise_sim():
 
     fig.suptitle(f"Monte Carlo Quantum Trajectories vs Exact Solutions │ {BACKEND.upper()} │ {TS}",
                  color=P["text"], fontsize=13, fontweight="bold", y=0.98)
-    path = f"examples/plots/05_noise_sim_{TS}.png"
+    path = f"tpu/plots/05_noise_sim_{TS}.png"
     plt.savefig(path, dpi=180, bbox_inches="tight", facecolor=P["bg"]); plt.close()
     print(f"\n  🖼  Noise simulation plot saved → {path}")
     json.dump({"experiment":"noise_simulation","noise_vals":noise_vals.tolist(),
                "trajectory_counts":trajectory_counts},
-              open(f"results/noise_sim_{TS}.json","w"), indent=2)
-    print(f"  📄 JSON saved → results/noise_sim_{TS}.json")
+              open(f"tpu/results/noise_sim_{TS}.json","w"), indent=2)
+    print(f"  📄 JSON saved → tpu/results/noise_sim_{TS}.json")
 
 # ═════════════════════════════════════════════════════════════════════════════
 # EXPERIMENT 6 — Noisy NISQ Circuit Simulation & Scaling
@@ -842,14 +842,14 @@ def run_nisq_benchmark():
 
     fig.suptitle(f"Noisy NISQ Circuit Simulation │ {BACKEND.upper()} │ {TS}",
                  color=P["text"], fontsize=13, fontweight="bold", y=0.98)
-    path = f"examples/plots/06_nisq_benchmark_{TS}.png"
+    path = f"tpu/plots/06_nisq_benchmark_{TS}.png"
     plt.savefig(path, dpi=180, bbox_inches="tight", facecolor=P["bg"]); plt.close()
     print(f"\n  🖼  NISQ benchmark plot saved → {path}")
     json.dump({"experiment":"nisq_benchmark","num_qubits":NUM_Q,"depth":DEPTH,
                "mean_fidelities":mean_fids,"scaling_qubits":scaling_qubits,
                "scaling_times_ms":bench_times},
-              open(f"results/nisq_benchmark_{TS}.json","w"), indent=2)
-    print(f"  📄 JSON saved → results/nisq_benchmark_{TS}.json")
+              open(f"tpu/results/nisq_benchmark_{TS}.json","w"), indent=2)
+    print(f"  📄 JSON saved → tpu/results/nisq_benchmark_{TS}.json")
 
 # ═════════════════════════════════════════════════════════════════════════════
 # EXPERIMENT 7 — Barren Plateau Study
@@ -1030,7 +1030,7 @@ def run_barren_plateau():
                  f"McClean et al. (2018) Nat. Comm. 9, 4812",
                  color=P["text"], fontsize=13, fontweight="bold", y=0.97)
 
-    path = f"examples/plots/07_barren_plateau_{TS}.png"
+    path = f"tpu/plots/07_barren_plateau_{TS}.png"
     plt.savefig(path, dpi=180, bbox_inches="tight", facecolor=P["bg"]); plt.close()
     print(f"\n  🖼  Barren plateau plot saved → {path}")
 
@@ -1038,8 +1038,8 @@ def run_barren_plateau():
                "width_study":width_results, "depth_study":depth_results,
                "width_exp_decay_slope": float(width_fit[0]),
                "depth_exp_decay_slope": float(depth_fit[0])},
-              open(f"results/barren_plateau_{TS}.json","w"), indent=2)
-    print(f"  📄 JSON saved → results/barren_plateau_{TS}.json")
+              open(f"tpu/results/barren_plateau_{TS}.json","w"), indent=2)
+    print(f"  📄 JSON saved → tpu/results/barren_plateau_{TS}.json")
 
 # ═════════════════════════════════════════════════════════════════════════════
 # EXPERIMENT 8 — TPU Qubit Scaling Benchmark
@@ -1235,15 +1235,15 @@ def run_tpu_benchmark():
           f"({results[-1]['state_size_str']})\n")
 
     # Save CSV + JSON
-    csv_path = f"results/tpu_benchmark_{TS}.csv"
+    csv_path = f"tpu/results/tpu_benchmark_{TS}.csv"
     with open(csv_path,"w",newline="") as f:
         csv.DictWriter(f, fieldnames=results[0].keys()).writeheader()
         csv.DictWriter(f, fieldnames=results[0].keys()).writerows(results)
     print(f"  📄 CSV  → {csv_path}")
     meta = {"timestamp":TS,"backend":BACKEND,"devices":NUM_DEV,
             "usable_gb":usable_gb,"results":results}
-    json.dump(meta, open(f"results/tpu_benchmark_{TS}.json","w"), indent=2)
-    print(f"  📄 JSON → results/tpu_benchmark_{TS}.json")
+    json.dump(meta, open(f"tpu/results/tpu_benchmark_{TS}.json","w"), indent=2)
+    print(f"  📄 JSON → tpu/results/tpu_benchmark_{TS}.json")
 
     # 6-panel benchmark plot
     ns   = [r["n_qubits"]         for r in results]
@@ -1339,7 +1339,7 @@ def run_tpu_benchmark():
                       xycoords="axes fraction", ha="right", va="bottom",
                       fontsize=7, color=P["sub"], alpha=0.6)
 
-    path = f"examples/plots/tpu_benchmark_{TS}.png"
+    path = f"tpu/plots/tpu_benchmark_{TS}.png"
     plt.savefig(path, dpi=180, bbox_inches="tight", facecolor=P["bg"]); plt.close()
     print(f"  Benchmark plot saved -> {path}")
 
@@ -1369,7 +1369,7 @@ class Tee:
 
 if __name__ == "__main__":
     # ── Redirect all output to both console AND a txt log file ──
-    LOG_PATH = f"results/run_output_{TS}.txt"
+    LOG_PATH = f"tpu/results/run_output_{TS}.txt"
     tee = Tee(LOG_PATH)
     sys.stdout = tee
 
@@ -1393,8 +1393,8 @@ if __name__ == "__main__":
     run_tpu_benchmark()
 
     banner(f"ALL EXPERIMENTS COMPLETE — total time: {time.perf_counter()-t_total:.1f}s")
-    print(f"  📁 Results   → results/")
-    print(f"  🖼  Plots     → examples/plots/")
+    print(f"  📁 Results   → tpu/results/")
+    print(f"  🖼  Plots     → tpu/plots/")
     print(f"  📝 Full log  → {LOG_PATH}")
     print(f"  🕐 Timestamp : {TS}\n")
 

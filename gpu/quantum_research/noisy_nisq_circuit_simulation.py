@@ -1,17 +1,25 @@
 import os
 import sys
 import time
+import json
 from functools import partial
+from datetime import datetime
 
-# Ensure the root directory of the workspace is in the python path
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+# Set up the python path to import local modules
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import jax
 import jax.numpy as jnp
+import matplotlib
+matplotlib.use('Agg')
 import matplotlib.pyplot as plt
+
 from jax_qsim import zero_state, apply_gate, ops
 from jax_qsim.noise import apply_channel, depolarizing_channel
 from jax_qsim.core import state_vector_flat
+
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+TS = datetime.now().strftime("%Y%m%d_%H%M%S")
 
 # --- GPU NISQ Circuit Simulator ---
 
@@ -112,7 +120,6 @@ def run_nisq_heavy_simulation():
     start_time = time.time()
     
     # Run the heavy vectorized simulation on the GPU!
-    # Returns an array of shape (num_noise_steps, num_trajectories, 2, ..., 2)
     noisy_states = run_vectorized_nisq(batch_keys, noise_rates, params, num_qubits, depth)
     noisy_states.block_until_ready() # Block until JAX finishes async GPU execution
     
@@ -143,8 +150,6 @@ def run_nisq_heavy_simulation():
     mean_fidelities = jnp.mean(fidelities, axis=1)
     
     # Count noisy gates
-    # Each layer has: num_qubits * 3 (Rx, Ry, Depolarizing noise) + (num_qubits//2)*3 (CNOT + 2 noises)
-    # We estimate error probability per gate step
     num_noisy_gates = depth * (num_qubits + (num_qubits // 2) * 2)
     theoretical_fidelity = (1.0 - noise_rates) ** num_noisy_gates
     
@@ -209,14 +214,29 @@ def run_nisq_heavy_simulation():
                  fontsize=15, fontweight='bold', color='#cdd6f4', y=0.98)
     
     # Save the output plots
-    os.makedirs('examples/plots', exist_ok=True)
-    plot_path = 'examples/plots/05_nisq_heavy_benchmark.png'
+    plot_dir = os.path.join(ROOT, 'plots')
+    os.makedirs(plot_dir, exist_ok=True)
+    plot_path = os.path.join(plot_dir, f'nisq_heavy_benchmark_{TS}.png')
     plt.savefig(plot_path, dpi=300, bbox_inches='tight')
     plt.close()
+    
+    # Also save JSON results
+    results_dir = os.path.join(ROOT, 'results')
+    os.makedirs(results_dir, exist_ok=True)
+    json_path = os.path.join(results_dir, f'nisq_heavy_benchmark_{TS}.json')
+    json.dump({
+        "experiment": "nisq_benchmark",
+        "num_qubits": num_qubits,
+        "depth": depth,
+        "mean_fidelities": mean_fidelities.tolist(),
+        "scaling_qubits": scaling_qubits,
+        "scaling_times_ms": benchmark_times
+    }, open(json_path, "w"), indent=2)
     
     print("\n" + "=" * 80)
     print(f"Success! Heavy simulation and stress test completed successfully.")
     print(f"Plot saved to '{plot_path}'")
+    print(f"Results JSON saved to '{json_path}'")
     print("=" * 80)
 
 if __name__ == '__main__':

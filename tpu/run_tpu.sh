@@ -43,7 +43,7 @@ case $choice in
         gcloud compute tpus tpu-vm ssh $TPU_NAME \
             --zone=$ZONE \
             --worker=all \
-            --command="source $ENV_ACTIVATE && cd $REPO_DIR && python3 tpu_quantum_scale.py"
+            --command="source $ENV_ACTIVATE && cd $REPO_DIR && python3 tpu/tpu_quantum_scale.py"
         ;;
     3)
         read -p "Enter the run timestamp (e.g. 20260524_110111): " ts
@@ -55,7 +55,7 @@ case $choice in
         gcloud compute tpus tpu-vm ssh $TPU_NAME \
             --zone=$ZONE \
             --worker=0 \
-            --command="cd $REPO_DIR && tar -czf ~/run_$ts.tar.gz results/*$ts* examples/plots/*$ts*"
+            --command="cd $REPO_DIR && tar -czf ~/run_$ts.tar.gz tpu/results/*$ts* tpu/plots/*$ts*"
         
         echo "--> Downloading packed archive to Cloud Shell..."
         gcloud compute tpus tpu-vm scp $TPU_NAME:~/run_$ts.tar.gz ~/run_$ts.tar.gz \
@@ -70,9 +70,10 @@ case $choice in
         gcloud compute tpus tpu-vm ssh $TPU_NAME \
             --zone=$ZONE \
             --worker=all \
-            --command="rm -rf $REPO_DIR/results/* $REPO_DIR/examples/plots/* ~/run_*.tar.gz; echo 'Cleaned successfully.'"
+            --command="rm -rf $REPO_DIR/tpu/results/* $REPO_DIR/tpu/plots/* ~/run_*.tar.gz; echo 'Cleaned successfully.'"
         ;;
     *)
         echo "Invalid choice."
         ;;
 esac
+

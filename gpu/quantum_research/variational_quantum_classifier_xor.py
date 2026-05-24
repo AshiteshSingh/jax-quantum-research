@@ -147,7 +147,7 @@ def run_vqc():
     plt.legend(facecolor='#1e1e2e', edgecolor='#cba6f7', labelcolor='#cdd6f4')
     plt.grid(True, linestyle='--', color='#585b70', alpha=0.3)
     
-    plot_dir = os.path.join(ROOT, 'examples', 'plots')
+    plot_dir = os.path.join(ROOT, 'plots')
     os.makedirs(plot_dir, exist_ok=True)
     plot_path = os.path.join(plot_dir, '02_vqc_boundary.png')
     plt.savefig(plot_path, dpi=180, bbox_inches='tight')

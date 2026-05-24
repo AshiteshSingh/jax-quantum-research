@@ -1,15 +1,23 @@
 import os
 import sys
-# Ensure the root directory of the workspace is in the python path
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+import json
+from datetime import datetime
+
+# Set up the python path to import local modules
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import jax
 import jax.numpy as jnp
+import matplotlib
+matplotlib.use('Agg')
 import matplotlib.pyplot as plt
+
 from jax_qsim import zero_state, apply_gate, ops
 from jax_qsim.noise import apply_channel, amplitude_damping_channel, phase_damping_channel, depolarizing_channel
 from jax_qsim.observables import PauliString, expectation
 
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+TS = datetime.now().strftime("%Y%m%d_%H%M%S")
 
 def simulate_trajectory(key, noise_param, channel_type, init_state, obs):
     """Simulates a single noisy quantum trajectory and computes the expectation of an observable.
@@ -34,11 +42,9 @@ def simulate_trajectory(key, noise_param, channel_type, init_state, obs):
     return expectation(noisy_state, obs)
 
 # Vectorize over multiple trajectory random keys (Monte Carlo batch)
-# in_axes=(0, None, None, None, None) -> vectorize over key, keep others constant
 vectorized_trajectories = jax.vmap(simulate_trajectory, in_axes=(0, None, None, None, None))
 
 # Vectorize over noise parameters to generate the full curve
-# in_axes=(None, 0, None, None, None) -> vectorize over noise_param
 vectorized_curve = jax.vmap(vectorized_trajectories, in_axes=(None, 0, None, None, None))
 
 def run_noise_simulation():
@@ -67,10 +73,6 @@ def run_noise_simulation():
     # --- SIMULATION 1: Amplitude Damping ---
     print("1. Running Amplitude Damping Simulation (decay from |1> to |0>)...")
     exact_amp = 1.0 - noise_vals # Population of |1> is (1 - <Z>)/2, which is 1 - gamma
-    
-    # Prepare inputs: population of |1> is obtained by mapping <Z> to population
-    # Since <Z> for |0> is +1 and for |1> is -1, population of |1> = (1 - <Z>) / 2
-    # So we compute <Z> over trajectories, then convert to population of |1>
     
     ax1 = axes[0]
     ax1.set_facecolor('#24273a')
@@ -120,7 +122,7 @@ def run_noise_simulation():
     ax2.set_ylabel('Expectation Value $\\langle X \\rangle$', fontsize=11, color='#cdd6f4')
     ax2.grid(True, linestyle='--', color='#585b70', alpha=0.4)
     ax2.tick_params(colors='#cdd6f4', labelsize=10)
-    ax2.legend(facecolor='#1e1e2e', edgecolor='#cba6f7', labelcolor='#cdd6f4', loc='bottom left' if hasattr(plt, 'loc') else None)
+    ax2.legend(facecolor='#1e1e2e', edgecolor='#cba6f7', labelcolor='#cdd6f4')
     
     # --- SIMULATION 3: Depolarizing Channel ---
     print("3. Running Depolarizing Noise Simulation (decay of |+> state)...")
@@ -151,14 +153,23 @@ def run_noise_simulation():
                  fontsize=16, fontweight='bold', color='#cdd6f4', y=0.98)
     
     # Save the output plot
-    os.makedirs('examples/plots', exist_ok=True)
-    plot_path = 'examples/plots/04_noise_simulation.png'
+    plot_dir = os.path.join(ROOT, 'plots')
+    os.makedirs(plot_dir, exist_ok=True)
+    plot_path = os.path.join(plot_dir, f'noise_simulation_monte_carlo_{TS}.png')
     plt.savefig(plot_path, dpi=300, bbox_inches='tight')
     plt.close()
+    
+    # Also save JSON results
+    results_dir = os.path.join(ROOT, 'results')
+    os.makedirs(results_dir, exist_ok=True)
+    json_path = os.path.join(results_dir, f'noise_simulation_monte_carlo_{TS}.json')
+    json.dump({"experiment": "noise_simulation", "noise_vals": noise_vals.tolist(), "trajectory_counts": trajectory_counts},
+              open(json_path, "w"), indent=2)
     
     print("\n" + "=" * 70)
     print(f"Success! Noise simulation complete.")
     print(f"Stunning visualization saved to '{plot_path}'")
+    print(f"Results JSON saved to '{json_path}'")
     print("=" * 70)
 
 if __name__ == '__main__':

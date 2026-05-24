@@ -177,8 +177,8 @@ def run_qaoa_depth(p: int, H_cost: Hamiltonian, edges, n: int,
 
 def run_qaoa_study():
     ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-    os.makedirs("results", exist_ok=True)
-    os.makedirs("examples/plots", exist_ok=True)
+    os.makedirs("gpu/results", exist_ok=True)
+    os.makedirs("gpu/plots", exist_ok=True)
 
     print()
     print("╔══════════════════════════════════════════════════════════════════════╗")
@@ -217,7 +217,7 @@ def run_qaoa_study():
           f"(approx ratio {all_results[-1]['approx_ratio']:.4f})")
 
     # Save results
-    json_path = f"results/qaoa_{ts}.json"
+    json_path = f"gpu/results/qaoa_{ts}.json"
     with open(json_path, 'w') as f:
         json.dump({"classical_maxcut": CLASSICAL_MAXCUT,
                    "graph_edges": GRAPH_EDGES,
@@ -331,7 +331,7 @@ def plot_qaoa_results(all_results, classical_cut, ts):
         color=PALETTE["text"], fontsize=13, fontweight='bold', y=0.97
     )
 
-    plot_path = f"examples/plots/qaoa_{ts}.png"
+    plot_path = f"gpu/plots/qaoa_{ts}.png"
     plt.savefig(plot_path, dpi=180, bbox_inches='tight', facecolor=PALETTE["bg"])
     plt.close()
     print(f"\n  🖼  QAOA plot saved → {plot_path}")

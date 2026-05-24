@@ -1,0 +1,196 @@
+
+══════════════════════════════════════════════════════════════════════════════
+     JAX QUANTUM RESEARCH SUITE — TPU v5e-16 Edition  │  20260524_111303      
+══════════════════════════════════════════════════════════════════════════════
+  Backend       : TPU
+  Devices       : 16
+  TPU type      : Google Cloud TPU v5e-16
+  HBM per chip  : 16 GB HBM2e
+  Total HBM     : 256 GB
+    [ 0] TPU_0(process=0,(0,0,0,0))
+    [ 1] TPU_1(process=0,(1,0,0,0))
+    [ 2] TPU_4(process=0,(0,1,0,0))
+    [ 3] TPU_5(process=0,(1,1,0,0))
+    [ 4] TPU_2(process=1,(2,0,0,0))
+    [ 5] TPU_3(process=1,(3,0,0,0))
+    [ 6] TPU_6(process=1,(2,1,0,0))
+    [ 7] TPU_7(process=1,(3,1,0,0))
+    [ 8] TPU_8(process=2,(0,2,0,0))
+    [ 9] TPU_9(process=2,(1,2,0,0))
+    [10] TPU_12(process=2,(0,3,0,0))
+    [11] TPU_13(process=2,(1,3,0,0))
+    [12] TPU_10(process=3,(2,2,0,0))
+    [13] TPU_11(process=3,(3,2,0,0))
+    [14] TPU_14(process=3,(2,3,0,0))
+    [15] TPU_15(process=3,(3,3,0,0))
+
+══════════════════════════════════════════════════════════════════════════════
+               EXPERIMENT 1 — GHZ State Preparation (3 Qubits)                
+══════════════════════════════════════════════════════════════════════════════
+   Epoch        Loss    Fidelity
+  ──────  ──────────  ──────────
+       1    0.504118    0.495882
+      20    0.148297    0.851703
+      40    0.016865    0.983135
+      60   -0.016200    1.016200
+      80   -0.002053    1.002053
+     100   -0.009236    1.009236
+     120   -0.001710    1.001710
+     140    0.017999    0.982001
+     160    0.004828    0.995172
+     180   -0.006855    1.006855
+     200   -0.002144    1.002144
+
+  🖼  Plot saved → examples/plots/01_state_prep_20260524_111303.png
+  📄 JSON saved → results/state_prep_20260524_111303.json
+
+══════════════════════════════════════════════════════════════════════════════
+            EXPERIMENT 2 — VQC XOR Classifier (2 Qubits, jax.vmap)            
+══════════════════════════════════════════════════════════════════════════════
+   Epoch        Loss    Accuracy
+  ──────  ──────────  ──────────
+       1    1.619026      50.50%
+      15    0.894616      66.00%
+      30    0.730674      79.50%
+      45    0.578886      88.50%
+      60    0.511965     100.00%
+      75    0.490539      99.50%
+      90    0.484136      99.00%
+     105    0.485085      99.50%
+     120    0.485058      99.50%
+     135    0.485187      99.50%
+     150    0.486269     100.00%
+
+  🖼  Plot saved → examples/plots/02_vqc_20260524_111303.png
+  📄 JSON saved → results/vqc_20260524_111303.json
+
+══════════════════════════════════════════════════════════════════════════════
+      EXPERIMENT 3 — VQE: H₂ Ground State Energy (4 Qubits, JW mapping)       
+══════════════════════════════════════════════════════════════════════════════
+  Parameters : 32
+  FCI target : -1.1372 Hartree
+
+   Epoch      Energy(Ha)          |∇E|    Error(mHa)
+  ──────  ──────────────  ────────────  ────────────
+       1     -0.93342119      0.043643      203.7788
+      40     -0.97865850      0.160838      158.5415
+      80     -1.23892581      0.416113      101.7258
+     120     -1.57342088      0.322131      436.2209
+     160     -1.80565286      0.250810      668.4529
+     200     -1.87715471      0.147858      739.9547
+     240     -1.96261477      0.103956      825.4148
+     280     -1.93548703      0.062980      798.2870
+     320     -1.96904337      0.048015      831.8434
+     360     -1.96825874      0.044927      831.0587
+     400     -2.00388718      0.035827      866.6872
+
+  ╔══════════════════════════════════════════╗
+  ║  VQE energy    : -2.00388718 Ha        ║
+  ║  FCI reference : -1.13720000 Ha        ║
+  ║  Error         : 866.6872 mHartree       ║
+  ║  Chem. accuracy: ✗ NO (866.69 mHa)        ║
+  ╚══════════════════════════════════════════╝
+
+  🖼  VQE plot saved → examples/plots/vqe_20260524_111303.png
+  📄 VQE JSON saved → results/vqe_20260524_111303.json
+
+══════════════════════════════════════════════════════════════════════════════
+          EXPERIMENT 4 — QAOA MaxCut (6-node weighted graph, p=1..5)          
+══════════════════════════════════════════════════════════════════════════════
+  Classical MaxCut: 10.50  (exhaustive)
+  Best partition  : ['A', 'B', 'A', 'B', 'A', 'B']
+
+    p    E[cut]    Approx ratio    Time(s)
+  ───  ────────  ──────────────  ─────────
+    1    5.5104          0.6123       2.26s
+    2    6.3622          0.7069       3.83s
+    3    8.1626          0.9070       5.38s
+    4    6.9163          0.7685       7.06s
+    5    8.2890          0.9210       8.70s
+
+  🖼  QAOA plot saved → examples/plots/qaoa_20260524_111303.png
+  📄 QAOA JSON saved → results/qaoa_20260524_111303.json
+
+══════════════════════════════════════════════════════════════════════════════
+      EXPERIMENT 5 — Quantum Noise Simulation (Monte Carlo Trajectories)      
+══════════════════════════════════════════════════════════════════════════════
+  Running amplitude damping, phase damping, depolarizing simulations...
+
+  🖼  Noise simulation plot saved → examples/plots/05_noise_sim_20260524_111303.png
+  📄 JSON saved → results/noise_sim_20260524_111303.json
+
+══════════════════════════════════════════════════════════════════════════════
+       EXPERIMENT 6 — Noisy NISQ Circuit Simulation & Scaling Benchmark       
+══════════════════════════════════════════════════════════════════════════════
+  Qubits: 8, Depth: 4, Trajectories: 50
+  Noise rates: 8 steps from 0 to 0.05
+  Computing noisy trajectories...
+    noise=0.0000  mean_fidelity=1.0143
+    noise=0.0071  mean_fidelity=0.8415
+    noise=0.0143  mean_fidelity=0.6508
+    noise=0.0214  mean_fidelity=0.5229
+    noise=0.0286  mean_fidelity=0.4196
+    noise=0.0357  mean_fidelity=0.3151
+    noise=0.0429  mean_fidelity=0.3299
+    noise=0.0500  mean_fidelity=0.2644
+
+  Running qubit scaling benchmark (noisy circuits)...
+    Qubits:  4  |  222.76 ms/trajectory
+    Qubits:  5  |  263.03 ms/trajectory
+    Qubits:  6  |  315.76 ms/trajectory
+    Qubits:  7  |  368.34 ms/trajectory
+    Qubits:  8  |  423.51 ms/trajectory
+    Qubits:  9  |  480.06 ms/trajectory
+    Qubits: 10  |  526.35 ms/trajectory
+
+  🖼  NISQ benchmark plot saved → examples/plots/06_nisq_benchmark_20260524_111303.png
+  📄 JSON saved → results/nisq_benchmark_20260524_111303.json
+
+══════════════════════════════════════════════════════════════════════════════
+      EXPERIMENT 7 — Barren Plateau Study (Vanishing Gradients in PQCs)       
+══════════════════════════════════════════════════════════════════════════════
+  Reference: McClean et al. (2018) Nature Comm. 9, 4812
+
+  [Study 1] Gradient variance vs width  (depth=4, trials=100)
+  Qubits           Mean Var          Max Var          Min Var
+  ────────  ───────────────  ───────────────  ───────────────
+  2            8.886644e-02     2.219462e-01     2.020452e-06
+  3            3.839381e-02     1.491132e-01     1.914088e-06
+  4            2.296656e-02     1.106447e-01     9.312272e-07
+  5            1.754677e-02     1.180172e-01     6.682145e-07
+  6            1.533816e-02     1.489677e-01     6.314238e-07
+  7            1.285067e-02     1.317020e-01     2.863481e-07
+  8            1.158626e-02     1.195685e-01     2.017962e-07
+
+  [Study 2] Gradient variance vs depth  (n=4, trials=100)
+  Depth            Mean Var          Max Var          Min Var
+  ────────  ───────────────  ───────────────  ───────────────
+  1            5.895077e-02     4.715438e-01     2.360714e-06
+  2            4.472530e-02     3.233325e-01     1.590231e-06
+  3            3.202492e-02     2.059630e-01     1.412466e-06
+  4            2.296656e-02     1.106447e-01     9.312272e-07
+  5            2.173563e-02     8.941457e-02     1.184119e-06
+  6            2.130224e-02     6.908736e-02     1.389838e-06
+  7            2.125596e-02     6.189298e-02     1.235675e-06
+  8            2.214112e-02     7.555389e-02     1.047886e-06
+
+  [Study 3] Computing 2D loss landscape (4 qubits, 2 layers)... done.
+
+  Width decay fit: Var ~ exp(-0.3109 * n)
+  => 0.7328x per qubit added
+
+  🖼  Barren plateau plot saved → examples/plots/07_barren_plateau_20260524_111303.png
+  📄 JSON saved → results/barren_plateau_20260524_111303.json
+
+══════════════════════════════════════════════════════════════════════════════
+         EXPERIMENT 5 — TPU Qubit Scaling Benchmark (16 devices, TPU)         
+══════════════════════════════════════════════════════════════════════════════
+  Total HBM           : 256 GB  (16 chips × 16 GB)
+  OS/runtime reserve  : 10 GB  (flat, per user request)
+  Usable for compute  : 246 GB
+  Max safe qubit count: 34  (2^34×8 = 128 GB state vector)
+
+  ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  Qubits  │ State Size  │ FWD Compile(s) │ FWD Exec(s)  │ GRAD Compile(s) │ GRAD Exec(s)  │ HBM Used    │ Throughput        
+  ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  10      │ 8.00 KB     │ 2.681          │ 0.00057      │ 0.517           │ 0.00061       │ 4.7 MiB     │ 10.70M/s          

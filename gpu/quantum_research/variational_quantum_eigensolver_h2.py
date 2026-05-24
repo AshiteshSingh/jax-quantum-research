@@ -221,8 +221,8 @@ def apply_theme(fig, axes):
         ax.grid(True, color=PALETTE["grid"], linestyle='--', alpha=0.6, linewidth=0.7)
 
 def plot_vqe_results(history, timestamp):
-    os.makedirs("examples/plots", exist_ok=True)
-    os.makedirs("results", exist_ok=True)
+    os.makedirs("gpu/plots", exist_ok=True)
+    os.makedirs("gpu/results", exist_ok=True)
     epochs  = [h["epoch"]    for h in history]
     energies= [h["energy"]   for h in history]
     gnorms  = [h["grad_norm"]for h in history]
@@ -287,13 +287,13 @@ def plot_vqe_results(history, timestamp):
         color=PALETTE["text"], fontsize=13, fontweight='bold', y=0.97
     )
 
-    plot_path = f"examples/plots/vqe_{timestamp}.png"
+    plot_path = f"gpu/plots/vqe_{timestamp}.png"
     plt.savefig(plot_path, dpi=180, bbox_inches='tight', facecolor=PALETTE["bg"])
     plt.close()
     print(f"\n  🖼  VQE plot saved → {plot_path}")
 
     # Save raw data
-    json_path = f"results/vqe_{timestamp}.json"
+    json_path = f"gpu/results/vqe_{timestamp}.json"
     with open(json_path, 'w') as f:
         json.dump({"fci_energy": FCI_ENERGY, "history": history}, f, indent=2)
     print(f"  📄 VQE history saved → {json_path}")

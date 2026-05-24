@@ -35,29 +35,36 @@ Tailored to high-memory scaling experiments on multi-worker distributed clusters
 
 ```
 qauntum machine learning/
-├── jax_qsim/                     # === GPU MODULAR SIMULATOR ===
-│   ├── __init__.py               
-│   ├── core.py                   ← Tensor contraction engine (tensordot + transpose)
-│   ├── ops.py                    ← Standard unitary & parameter-driven gates
-│   ├── observables.py            ← Pauli strings, expectation values, sampling
-│   └── noise.py                  ← Quantum noise Kraus channel stochastic applying
+├── gpu/                          # === GPU MODULAR SIMULATOR & RESEARCH ===
+│   ├── jax_qsim/                 ← Modular simulator engine (gates, noise, observables)
+│   │   ├── __init__.py               
+│   │   ├── core.py                   ← Tensor contraction engine (tensordot + transpose)
+│   │   ├── ops.py                    ← Standard unitary & parameter-driven gates
+│   │   ├── observables.py            ← Pauli strings, expectation values, sampling
+│   │   └── noise.py                  ← Quantum noise Kraus channel stochastic applying
+│   │
+│   ├── quantum_research/         ← GPU Research Scripts (Descriptive Names)
+│   │   ├── ghz_state_preparation.py                        ← GHZ state learning
+│   │   ├── variational_quantum_classifier_xor.py           ← VQC XOR classification
+│   │   ├── gpu_vram_and_qubit_scaling_benchmark.py         ← GPU scaling & VRAM stress test
+│   │   ├── variational_quantum_eigensolver_h2.py           ← VQE ground-state of H2
+│   │   ├── quantum_approximate_optimization_algorithm_maxcut.py ← QAOA MaxCut optimization
+│   │   ├── quantum_noise_simulation_monte_carlo.py         ← Monte Carlo quantum trajectories
+│   │   ├── noisy_nisq_circuit_simulation.py                ← Noisy NISQ circuit & fidelity decay
+│   │   └── barren_plateau_gradient_vanishing.py            ← Barren plateau gradient scaling
+│   │
+│   ├── run_gpu.sh                ← Local WSL2 GPU example launcher
+│   ├── plots/                    ← GPU plots (tracked)
+│   └── results/                  ← GPU JSON and CSV results (tracked)
 │
-├── examples/                     # === GPU RESEARCH SAMPLES ===
-│   ├── 01_state_preparation.py   ← GHZ State learning using JAX grad & Adam
-│   ├── 02_vqc_classification.py  ← VQC XOR boundary resolution (jax.vmap batched)
-│   ├── 03_benchmarks.py          ← Local GPU VRAM & qubit scaling scaling
-│   ├── 04_vqe_h2_molecule.py     ← VQE ground-state chemical accuracy VQE
-│   ├── 05_qaoa_maxcut.py         ← QAOA MaxCut graph optimiser (p=1..5)
-│   └── 06_barren_plateaus.py     ← Barren plateaus gradient vanishing analysis
+├── tpu/                          # === TPU DISTRIBUTED SCALE SUITE ===
+│   ├── tpu_quantum_scale.py      ← TPU unified scaling executable (8 unified experiments)
+│   ├── run_tpu.sh                ← TPU VM remote cluster automation controller
+│   ├── plots/                    ← TPU watermarked plots (tracked)
+│   └── results/                  ← TPU JSON, CSV results, and Tee logs (tracked)
 │
-├── tpu_quantum_scale.py          # === TPU DISTRIBUTED SCALE SUITE (All 8 Exps) ===
-│                                 # Self-contained executable with multi-device PositionalSharding, 
-│                                 # flat lax.fori_loop complexity & Tee logs.
-│
-├── run_gpu.sh                    ← Local WSL2 GPU example launcher
-├── run_tpu.sh                    ← Remote Cloud Shell TPU cluster automation controller
 ├── tests/                        ← Pytest verification suite (gates, AD gradients)
-└── results/                      ← Generated JSON outputs, CSVs, and logs
+└── requirements.txt              ← Python environment dependencies
 ```
 
 ---
@@ -100,8 +107,8 @@ python3 -c "import jax; print('Backend:', jax.default_backend()); print('Devices
 ### 4. Run Modular GPU Examples
 Launch the interactive GPU shell helper:
 ```bash
-chmod +x run_gpu.sh
-./run_gpu.sh
+chmod +x gpu/run_gpu.sh
+./gpu/run_gpu.sh
 ```
 
 ---
@@ -138,12 +145,12 @@ git clone https://github.com/AshiteshSingh/jax-quantum-research.git
 ```
 
 ### 4. Run & Control TPU Execution via Cloud Shell
-Exit the TPU VM SSH session to return to your **Cloud Shell console**. We have created an automation controller script `run_tpu.sh` to make managing the cluster easy.
+Exit the TPU VM SSH session to return to your **Cloud Shell console**. We have created an automation controller script `run_tpu.sh` inside `tpu/` to make managing the cluster easy.
 
 Run the launcher from your Cloud Shell:
 ```bash
-chmod +x run_tpu.sh
-./run_tpu.sh
+chmod +x tpu/run_tpu.sh
+./tpu/run_tpu.sh
 ```
 The script provides interactive options:
 * **`1` (TERMINATE):** Instantly kills any zombie Python processes locked on `libtpu.so` across all workers (crucial if a previous run crashed or hung).
@@ -175,19 +182,19 @@ Both platforms cover high-fidelity experiments illustrating advanced physics phe
 ### Local GPU (RTX 2050 4 GB VRAM)
 * **Max Qubits:** 29 qubits ($2^{29} \times 8$ bytes $\approx$ 4.29 GB VRAM saturation limit).
 * **JIT Speedup:** Up to **400× faster** compared to uncompiled Python loops.
-* **Output Plots:** Saves detailed convergence plots to `examples/plots/`.
+* **Output Plots:** Saves detailed convergence plots to `gpu/plots/`.
 
 ### Distributed Cloud TPU (v5e-16 Cluster, 256 GB HBM2e)
 * **Max Qubits:** **33 qubits** successfully benchmarked ($2^{33} \times 8$ bytes $\approx$ 64.00 GB distributed state vector).
 * **Scaling speed:** Scales seamlessly up to 33 qubits in **154 seconds** total run time due to high-performance `lax.fori_loop` vectorizations.
-* **Watermarked Graphs:** The benchmark suite saves a 6-panel performance plot (`tpu_benchmark_[timestamp].png`) containing exact scaling fit laws directly in `examples/plots/`.
+* **Watermarked Graphs:** The benchmark suite saves a 6-panel performance plot (`tpu_benchmark_[timestamp].png`) containing exact scaling fit laws directly in `tpu/plots/`.
 
 ---
 
 ## 📝 TPU Results Download Guide
 When you run the TPU suite, it outputs files with a unique run timestamp (e.g. `20260524_110111`). You can easily download them by running:
 ```bash
-./run_tpu.sh
+./tpu/run_tpu.sh
 ```
 Select **Option 3**, enter your run timestamp `20260524_110111`, and the script will automatically pack the results (`.csv`, `.json`, `.png` plot, and the full console log `.txt` file) and trigger a browser download popup.
 

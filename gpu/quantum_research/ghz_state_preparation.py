@@ -121,7 +121,7 @@ def run_state_prep():
     plt.legend(facecolor='#1e1e2e', edgecolor='#cba6f7', labelcolor='#cdd6f4')
     
     # Save plot
-    plot_dir = os.path.join(ROOT, 'examples', 'plots')
+    plot_dir = os.path.join(ROOT, 'plots')
     os.makedirs(plot_dir, exist_ok=True)
     plot_path = os.path.join(plot_dir, '01_state_prep.png')
     plt.savefig(plot_path, dpi=180, bbox_inches='tight')
