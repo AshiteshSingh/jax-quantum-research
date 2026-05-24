@@ -18,6 +18,13 @@ Execute differentiable, noise-resilient, and large-scale quantum circuits accele
 
 ---
 
+### ⚡ 100% Pure JAX & Native XLA Compilation — Zero Framework Overhead
+> [!TIP]
+> **This simulator is engineered from the ground up in pure JAX (`jax.numpy`, `jax.lax`). It contains ZERO imports or dependencies on heavy classical frameworks like Qiskit, Cirq, or Pennylane.**
+> By avoiding heavy Python-based classical object models, wrapper structures, and CPU-bound DAG unrollings, our state-vector contractions compile natively into a single monolithic XLA (Accelerated Linear Algebra) kernel. This allows operations to execute at raw bare-metal speeds directly within the High-Bandwidth Memory (HBM) pool of TPU/GPU cores, completely eliminating CPU-to-Accelerator serialization latencies and pipeline bottlenecks!
+
+---
+
 > [!IMPORTANT]
 > **Researched deeply on Google Cloud TPU v6e-64chip and v5e-16 VM clusters, reaching a historic peak scale of 40 qubits (8.8 TB state-vector footprint). Generously supported by Google's TPU Research Cloud (TRC) program.** High-speed Inter-Chip Interconnects (ICI) and distributed JAX positional sharding enable state-vector scaling with maximum throughput.
 
