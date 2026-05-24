@@ -7,9 +7,15 @@
 ![CUDA](https://img.shields.io/badge/CUDA-12.x-green?style=for-the-badge&logo=nvidia)
 ![TPU](https://img.shields.io/badge/TPU-v5e--16-purple?style=for-the-badge&logo=google-cloud)
 ![Platform](https://img.shields.io/badge/Platform-GPU_|_TPU_|_CPU-blueviolet?style=for-the-badge)
+![Tested](https://img.shields.io/badge/TPU_v5e--16-Thoroughly_Tested-success?style=for-the-badge&logo=google-cloud&color=34A853)
 
 **A high-performance, research-grade quantum state-vector simulator built purely in JAX.  
 Execute differentiable, noise-resilient, and large-scale quantum circuits accelerated on local NVIDIA GPUs and multi-worker Google Cloud TPU clusters.**
+
+---
+
+> [!IMPORTANT]
+> **Thoroughly tested and validated on a Google Cloud TPU v5e-16 VM cluster (16 physical chips, 256 GB HBM2e state-vector memory).** Multi-Device positional sharding and lax-loop optimizations seamlessly scale state vectors up to **33 qubits** with extreme compute efficiency.
 
 </div>
 
@@ -188,6 +194,38 @@ Both platforms cover high-fidelity experiments illustrating advanced physics phe
 * **Max Qubits:** **33 qubits** successfully benchmarked ($2^{33} \times 8$ bytes $\approx$ 64.00 GB distributed state vector).
 * **Scaling speed:** Scales seamlessly up to 33 qubits in **154 seconds** total run time due to high-performance `lax.fori_loop` vectorizations.
 * **Watermarked Graphs:** The benchmark suite saves a 6-panel performance plot (`tpu_benchmark_[timestamp].png`) containing exact scaling fit laws directly in `tpu/plots/`.
+
+---
+
+## 🖼 Research Visualizations & Gallery
+
+Below is the complete gallery of execution plots generated on both the local **NVIDIA GPU** and the **Google Cloud TPU v5e-16 VM Cluster**, visualizing the quantum physics results and execution times.
+
+### 🎮 Local GPU Simulation Results
+These plots highlight rapid convergence under local JAX-accelerated GPU simulation:
+
+| GHZ State Preparation Convergence | Variational Quantum Classifier (XOR Boundary) |
+|:---:|:---:|
+| ![GHZ State Prep](gpu/plots/01_state_prep.png) | ![VQC Boundary](gpu/plots/02_vqc_boundary.png) |
+| **VQE H₂ Ground State Energy** | **QAOA MaxCut Optimization** |
+| ![VQE Ground State](gpu/plots/vqe_20260524_081232.png) | ![QAOA MaxCut](gpu/plots/qaoa_20260524_081242.png) |
+| **Barren Plateau Gradient Study** | **GPU Scaling Benchmark** |
+| ![Barren Plateaus](gpu/plots/barren_plateau_20260524_081324.png) | ![GPU Scaling](gpu/plots/benchmark_20260524_074903.png) |
+
+---
+
+### ⚡ Distributed Cloud TPU (v5e-16) Simulation Results
+These plots represent high-fidelity and noise-resilient large-scale simulations running concurrently on the Google Cloud TPU VM Cluster:
+
+| GHZ State Prep (TPU) | Variational Quantum Classifier (TPU) |
+|:---:|:---:|
+| ![GHZ State Prep TPU](tpu/plots/01_state_prep_20260524_111303.png) | ![VQC Classifier TPU](tpu/plots/02_vqc_20260524_111303.png) |
+| **VQE H₂ Ground State (TPU)** | **QAOA MaxCut (TPU)** |
+| ![VQE H2 TPU](tpu/plots/vqe_20260524_111303.png) | ![QAOA MaxCut TPU](tpu/plots/qaoa_20260524_111303.png) |
+| **Monte Carlo Noise Trajectories (TPU)** | **Noisy NISQ Fidelity Decay (TPU)** |
+| ![Noise Simulation TPU](tpu/plots/05_noise_sim_20260524_111303.png) | ![NISQ Benchmark TPU](tpu/plots/06_nisq_benchmark_20260524_111303.png) |
+| **Barren Plateaus (TPU)** | **TPU 33-Qubit Scaling Benchmark** |
+| ![Barren Plateau TPU](tpu/plots/07_barren_plateau_20260524_111303.png) | ![TPU Benchmark](tpu/plots/tpu_benchmark_20260524_110111.png) |
 
 ---
 
