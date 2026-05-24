@@ -608,15 +608,21 @@ def get_hbm_mib():
 def run_tpu_benchmark():
     banner(f"EXPERIMENT 5 — TPU Qubit Scaling Benchmark ({NUM_DEV} devices, {BACKEND.upper()})")
 
-    MEM_PER_DEV_GB    = 16.0
-    RESERVED_GB_PER   = 4.0
-    total_raw_gb      = NUM_DEV * MEM_PER_DEV_GB
-    total_reserved_gb = NUM_DEV * RESERVED_GB_PER
-    usable_gb         = total_raw_gb - total_reserved_gb
+    MEM_PER_DEV_GB = 16.0               # v5litepod-16: 16 GB HBM per chip
+    TOTAL_HBM_GB   = NUM_DEV * MEM_PER_DEV_GB   # 16 chips × 16 GB = 256 GB
+    OS_RESERVE_GB  = 10.0               # flat OS/runtime headroom (user request)
+    usable_gb      = TOTAL_HBM_GB - OS_RESERVE_GB  # 246 GB available
 
-    print(f"  Raw HBM per device  : {MEM_PER_DEV_GB} GB")
-    print(f"  Reserved headroom   : {RESERVED_GB_PER} GB/device")
-    print(f"  Usable total        : {usable_gb} GB across {NUM_DEV} devices\n")
+    # Math recap:
+    #   n=34 → 2^34 × 8 bytes = 128 GB state vector  ✓ fits in 246 GB
+    #   n=35 → 2^35 × 8 bytes = 256 GB               ✗ exceeds 246 GB → auto-stop
+    # Gradient computation adds ~1-2× state-vector overhead (XLA buffer reuse)
+    # so n=34 is the practical maximum on this hardware.
+
+    print(f"  Total HBM           : {TOTAL_HBM_GB:.0f} GB  ({NUM_DEV} chips × {MEM_PER_DEV_GB:.0f} GB)")
+    print(f"  OS/runtime reserve  : {OS_RESERVE_GB:.0f} GB  (flat, per user request)")
+    print(f"  Usable for compute  : {usable_gb:.0f} GB")
+    print(f"  Max safe qubit count: 34  (2^34×8 = 128 GB state vector)\n")
 
     def bench_circuit(params, n):
         s = zero_state(n)
@@ -639,7 +645,7 @@ def run_tpu_benchmark():
     print("  "+sep); print("  "+frow(*HDR)); print("  "+sep)
 
     results = []
-    for n in range(10, 41):
+    for n in range(10, 37):   # n=35 will exceed 246 GB and auto-stop; 36 is safe ceiling
         sb = (2**n)*8
         sg = sb/1024**3
         ng = 1 + n*4 + n
@@ -760,8 +766,10 @@ def run_tpu_benchmark():
 
     ax2 = fig.add_subplot(gsp[1,0])
     ax2.semilogy(ns,smb,"o-",color=P["a4"],lw=2.5,ms=7)
-    ax2.axhline(16384,color=P["a3"],ls="--",lw=1.5,label="16 GB HBM/chip")
-    ax2.axhline(usable_gb*1024,color=P["a5"],ls=":",lw=1.5,label=f"Safety cap ({usable_gb:.0f} GB)")
+    ax2.axhline(TOTAL_HBM_GB*1024, color=P["a3"],ls="--",lw=1.5,
+                label=f"Total HBM ({TOTAL_HBM_GB:.0f} GB = {NUM_DEV} chips x 16 GB)")
+    ax2.axhline(usable_gb*1024,color=P["a5"],ls=":",lw=1.5,
+                label=f"Usable cap ({usable_gb:.0f} GB, -10 GB OS reserve)")
     ax2.legend(facecolor=P["panel"],edgecolor=P["border"],labelcolor=P["text"],fontsize=9)
     ax2.set_xlabel("Qubits"); ax2.set_ylabel("State-Vector (MiB) [log]")
     ax2.set_title("💾  Memory Footprint (2ⁿ×8 bytes)")
@@ -793,8 +801,8 @@ def run_tpu_benchmark():
     ax5.set_xticks(ns); theme(fig,ax5)
 
     fig.suptitle(
-        f"JAX TPU Quantum Scaling Benchmark │ {BACKEND.upper()} │ {NUM_DEV} devices │ {TS}\n"
-        f"v5litepod-16 │ {usable_gb:.0f} GB usable │ {RESERVED_GB_PER} GB/device reserved",
+        f"JAX TPU Quantum Scaling Benchmark  |  {BACKEND.upper()}  |  {NUM_DEV} devices  |  {TS}\n"
+        f"v5litepod-16  |  {TOTAL_HBM_GB:.0f} GB total  |  {usable_gb:.0f} GB usable  |  max n=34 qubits",
         color=P["text"],fontsize=13,fontweight="bold",y=0.98)
     path = f"examples/plots/tpu_benchmark_{TS}.png"
     plt.savefig(path, dpi=180, bbox_inches="tight", facecolor=P["bg"]); plt.close()
