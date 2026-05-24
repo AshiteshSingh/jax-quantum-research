@@ -1,362 +1,201 @@
-# JAX Quantum Simulator — High-Speed Differentiable Quantum State-Vector Simulator
+# JAX Quantum Research Suite — Dual GPU & TPU Accelerated Architectures
 
 <div align="center">
 
 ![Python](https://img.shields.io/badge/Python-3.10%2B-blue?style=for-the-badge&logo=python)
-![JAX](https://img.shields.io/badge/JAX-0.10%2B-orange?style=for-the-badge)
+![JAX](https://img.shields.io/badge/JAX-0.4%2B-orange?style=for-the-badge&logo=google)
 ![CUDA](https://img.shields.io/badge/CUDA-12.x-green?style=for-the-badge&logo=nvidia)
-![License](https://img.shields.io/badge/License-MIT-purple?style=for-the-badge)
-![Platform](https://img.shields.io/badge/Platform-GPU%20%7C%20TPU%20%7C%20CPU-blueviolet?style=for-the-badge)
+![TPU](https://img.shields.io/badge/TPU-v5e--16-purple?style=for-the-badge&logo=google-cloud)
+![Platform](https://img.shields.io/badge/Platform-GPU_|_TPU_|_CPU-blueviolet?style=for-the-badge)
 
-**A research-grade, hardware-accelerated quantum state-vector simulator built purely in JAX.  
-Run differentiable quantum circuits on NVIDIA GPUs and Google TPUs.**
+**A high-performance, research-grade quantum state-vector simulator built purely in JAX.  
+Execute differentiable, noise-resilient, and large-scale quantum circuits accelerated on local NVIDIA GPUs and multi-worker Google Cloud TPU clusters.**
 
 </div>
 
 ---
 
-## 🌟 Highlights
+## 🌟 Co-Existing Architectures
 
-| Feature | Details |
-|---|---|
-| 🔬 **Full Differentiability** | All parameterized gates support `jax.grad`, `jax.jacobian`, `jax.value_and_grad` |
-| ⚡ **JIT Compilation** | `jax.jit` compiles entire circuits to XLA — GPU-optimized HLO kernels |
-| 🎮 **GPU/TPU Acceleration** | Native CUDA 12 support via WSL2; tested on an RTX GPU (4 GB VRAM) |
-| 🔄 **Vectorized Batching** | `jax.vmap` over parameter batches or data batches with zero overhead |
-| 📐 **Tensor Contraction Engine** | Gate application via `jnp.tensordot` + axis permutation — O(2ⁿ) |
-| 🧪 **Research Examples** | VQE (H₂ molecule), QAOA (MaxCut), Barren Plateaus, VQC Classification |
-| 📊 **GPU Scaling Benchmarks** | Scales to 29 qubits (4 GB VRAM saturation), produces publication plots |
-| 🔊 **Noise Simulation** | Quantum trajectory simulation with Kraus operators |
+This repository is bifurcated into two specialized architectures optimized for different hardware scales:
 
----
+### 1. 🎮 GPU Architecture (Modular & Differentiable Simulator)
+Designed for local development, custom circuit composition, and interactive research using consumer or datacenter **NVIDIA GPUs** via CUDA / WSL2.
+* **Core:** The modular `jax_qsim/` engine. It implements high-performance gate application using `jnp.tensordot` axis contractions and inverse permutations.
+* **Workflow:** Ideal for rapid design of quantum neural networks (QML), quantum chemistry ansatzes (VQE), and custom quantum noise models.
 
-## 📋 Table of Contents
-
-- [Architecture](#-architecture)
-- [Mathematical Formulation](#-mathematical-formulation)
-- [Installation (GPU via WSL2)](#-installation-gpu-via-wsl2)
-- [Quick Start](#-quick-start)
-- [Research Examples](#-research-examples)
-- [GPU Benchmark Results](#-gpu-benchmark-results)
-- [Project Structure](#-project-structure)
-- [API Reference](#-api-reference)
-- [References](#-references)
+### 2. ⚡ TPU Architecture (High-Performance Distributed Scaling Suite)
+Tailored to high-memory scaling experiments on multi-worker distributed clusters (e.g., **Google Cloud TPU v5e-16** / **v5litepod-16** clusters, total 256 GB HBM2e).
+* **Core:** `tpu_quantum_scale.py` — A self-contained, multi-worker optimized executable running 8 unified quantum experiments.
+* **Optimizations:** Eliminates compiler graph-bloat via exact XLA parameter boundaries, replaces massive tensor operations with lightweight JAX `lax.fori_loop` state transitions, and splits massive $2^N$ state vectors across physical nodes utilizing multi-device `PositionalSharding`.
 
 ---
 
-## 🏗 Architecture
+## 🏗 Directory & Architecture Layout
 
 ```
-jax_qsim/
-├── core.py          ← Tensor contraction engine (tensordot + transpose permutation)
-├── ops.py           ← Standard & parameterized quantum gates (complex64 matrices)
-├── observables.py   ← Pauli strings, Hamiltonians, expectation values, sampling
-├── noise.py         ← Kraus operator channels (depolarizing, amplitude/phase damping)
-└── circuit.py       ← Stateless circuit builder → pure JAX function compiler
-
-examples/
-├── 01_state_preparation.py   ← Gradient-based GHZ state preparation (Adam optimizer)
-├── 02_vqc_classification.py  ← Variational Quantum Classifier: XOR (jax.vmap batch)
-├── 03_benchmarks.py          ← GPU VRAM scaling: 4→29 qubits, 6-panel plots, CSV/JSON
-├── 04_vqe_h2_molecule.py     ← VQE: H₂ ground state (chemical accuracy, PES curve)
-├── 05_qaoa_maxcut.py         ← QAOA: MaxCut on weighted graphs (depth p=1..5)
-└── 06_barren_plateaus.py     ← Barren plateau research (variance vs width, depth, 2D landscape)
+qauntum machine learning/
+├── jax_qsim/                     # === GPU MODULAR SIMULATOR ===
+│   ├── __init__.py               
+│   ├── core.py                   ← Tensor contraction engine (tensordot + transpose)
+│   ├── ops.py                    ← Standard unitary & parameter-driven gates
+│   ├── observables.py            ← Pauli strings, expectation values, sampling
+│   └── noise.py                  ← Quantum noise Kraus channel stochastic applying
+│
+├── examples/                     # === GPU RESEARCH SAMPLES ===
+│   ├── 01_state_preparation.py   ← GHZ State learning using JAX grad & Adam
+│   ├── 02_vqc_classification.py  ← VQC XOR boundary resolution (jax.vmap batched)
+│   ├── 03_benchmarks.py          ← Local GPU VRAM & qubit scaling scaling
+│   ├── 04_vqe_h2_molecule.py     ← VQE ground-state chemical accuracy VQE
+│   ├── 05_qaoa_maxcut.py         ← QAOA MaxCut graph optimiser (p=1..5)
+│   └── 06_barren_plateaus.py     ← Barren plateaus gradient vanishing analysis
+│
+├── tpu_quantum_scale.py          # === TPU DISTRIBUTED SCALE SUITE (All 8 Exps) ===
+│                                 # Self-contained executable with multi-device PositionalSharding, 
+│                                 # flat lax.fori_loop complexity & Tee logs.
+│
+├── run_gpu.sh                    ← Local WSL2 GPU example launcher
+├── run_tpu.sh                    ← Remote Cloud Shell TPU cluster automation controller
+├── tests/                        ← Pytest verification suite (gates, AD gradients)
+└── results/                      ← Generated JSON outputs, CSVs, and logs
 ```
 
 ---
 
-## 📐 Mathematical Formulation
+## 🛠 GPU Getting Started Guide (WSL2 / Linux PC)
 
-### State Vector Representation
+For Windows systems with NVIDIA GPUs, JAX requires **WSL2** (Windows Subsystem for Linux) to run GPU acceleration.
 
-An N-qubit quantum state is stored as a complex tensor:
-
-$$|\psi\rangle \rightarrow \mathbf{\Psi} \in \mathbb{C}^{2 \times 2 \times \cdots \times 2} \quad (N \text{ dimensions})$$
-
-Memory footprint: $2^N \times 8$ bytes (complex64)
-
-### Tensor Gate Application
-
-Applying a k-qubit unitary $U$ (matrix shape $2^k \times 2^k$, reshaped to tensor $\tilde{U}_{o_1\cdots o_k, i_1\cdots i_k}$) to target qubits $\mathbf{t} = \{t_1, \ldots, t_k\}$:
-
-$$\Psi'_{q_0 \cdots q_{N-1}} = \sum_{i_1, \ldots, i_k} \tilde{U}_{q_{t_1}\cdots q_{t_k},\, i_1\cdots i_k} \cdot \Psi_{q_0 \cdots i_1 \cdots i_k \cdots q_{N-1}}$$
-
-Implemented via `jnp.tensordot` + inverse permutation `jnp.transpose` — leverages tensor core acceleration on NVIDIA GPUs and matrix multiply units on TPUs.
-
-### Differentiable Expectation Values
-
-$$\mathcal{L}(\boldsymbol{\theta}) = \langle \psi(\boldsymbol{\theta}) | \hat{O} | \psi(\boldsymbol{\theta}) \rangle$$
-
-$$\frac{\partial \mathcal{L}}{\partial \theta_i} = \text{(via JAX reverse-mode AD — exact, not finite difference)}$$
-
-The Parameter Shift Rule is automatically satisfied since all gate matrices are analytic functions of their parameters.
-
----
-
-## ⚙️ Installation (GPU via WSL2)
-
-> **Windows + NVIDIA GPU** → must use WSL2 for GPU-accelerated JAX.  
-> CPU-only Windows pip install will never use your GPU.
-
-### Step 1 — WSL2 setup (one-time)
-```bash
-# In Windows PowerShell (as admin)
+### 1. Set Up WSL2 & Create Virtual Environment
+In Windows PowerShell (as Administrator), enable WSL2 if you haven't already:
+```powershell
 wsl --install
 ```
-
-### Step 2 — Create GPU virtual environment
+Then open your WSL2 Linux terminal, create, and activate a virtual environment:
 ```bash
-# Inside WSL2 terminal
 python3 -m venv ~/jax_gpu_env
 source ~/jax_gpu_env/bin/activate
 pip install --upgrade pip
 ```
 
-### Step 3 — Install CUDA-enabled JAX
+### 2. Install CUDA-Enabled JAX & Dependencies
 ```bash
-pip install --upgrade "jax[cuda12]" \
-    -f https://storage.googleapis.com/jax-releases/jax_cuda_releases.html
+# Install CUDA 12 support
+pip install --upgrade "jax[cuda12]" -f https://storage.googleapis.com/jax-releases/jax_cuda_releases.html
+
+# Install physics, testing, and charting packages
+pip install matplotlib pytest numpy
 ```
 
-### Step 4 — Install remaining dependencies
+### 3. Clone & Verify GPU Execution
 ```bash
-pip install matplotlib pytest
-```
+git clone https://github.com/AshiteshSingh/jax-quantum-research.git
+cd jax-quantum-research
 
-### Step 5 — Install this project
+# Run JAX device check
+python3 -c "import jax; print('Backend:', jax.default_backend()); print('Devices:', jax.devices())"
+```
+*Expected Output:* `Backend: gpu` along with your local `CudaDevice`.
+
+### 4. Run Modular GPU Examples
+Launch the interactive GPU shell helper:
 ```bash
-cd /mnt/c/Users/<your-username>/Desktop/qauntum\ machine\ learning
-export PYTHONPATH=$PYTHONPATH:$(pwd)
+chmod +x run_gpu.sh
+./run_gpu.sh
 ```
 
-### Step 6 — Verify GPU backend
+---
+
+## 🚀 TPU Getting Started Guide (Google Cloud TPU v5e-16)
+
+For high-end scaling experiments, run the suite on a **16-chip Cloud TPU VM cluster** (256 GB aggregate HBM2e memory).
+
+### 1. SSH into the TPU VM Cluster
+From your local Google Cloud Shell, authenticate and open a connection into the distributed TPU VM cluster (this targets all 4 workers in a 16-chip mesh):
 ```bash
-python3 -c "
-import jax
-print('Backend  :', jax.default_backend())
-print('Devices  :', jax.devices())
-print('GPU check:', jax.devices('gpu'))
-"
-```
-Expected output:
-```
-Backend  : gpu
-Devices  : [CudaDevice(id=0)]
-GPU check: [CudaDevice(id=0)]
+gcloud compute tpus tpu-vm ssh tpu-16chip-worker \
+  --zone=us-central1-a \
+  --worker=all
 ```
 
----
+### 2. Configure Virtual Environment & Packages (All Workers)
+Inside the SSH session (configured for all workers), run:
+```bash
+# Create and activate Python virtual environment
+python3 -m venv ~/tpu_env
+source ~/tpu_env/bin/activate
+pip install --upgrade pip
 
-## 🚀 Quick Start
-
-```python
-import jax
-import jax.numpy as jnp
-import jax_qsim as qsim
-
-# 1. Build a 3-qubit parameterized circuit
-c = qsim.Circuit(num_qubits=3)
-c.h(0).cnot(0, 1).cnot(1, 2)        # GHZ entanglement
-c.ry(0, param_index=0)               # Trainable RY on qubit 0
-c.ry(1, param_index=1)               # Trainable RY on qubit 1
-c.rz(2, param_index=2)               # Trainable RZ on qubit 2
-
-# 2. Define observable: Pauli Z on qubit 0
-obs = qsim.observables.PauliString({0: 'Z'})
-
-# 3. Define differentiable cost function
-def cost(params):
-    state = c.run(params)
-    return qsim.observables.expectation(state, obs)
-
-# 4. Compile + compute gradient (runs on GPU)
-grad_fn = jax.jit(jax.grad(cost))
-params  = jnp.array([0.1, 0.5, -0.3])
-print("Gradient:", grad_fn(params))
-
-# 5. Vectorize over a batch of 100 parameter sets using vmap
-batch_cost = jax.vmap(cost)
-batch_params = jnp.ones((100, 3)) * 0.1
-batch_results = jax.jit(batch_cost)(batch_params)
-print("Batch expectations shape:", batch_results.shape)   # (100,)
+# Install JAX with official Google TPU support & Matplotlib
+pip install "jax[tpu]" -f https://storage.googleapis.com/jax-releases/libtpu_releases.html
+pip install matplotlib numpy
 ```
 
----
-
-## 🔬 Research Examples & Plots
-
-Here are the 6 scientific examples included in the research suite, along with their generated high-DPI visualization plots showing physics results and hardware benchmarking.
-
----
-
-### 1. State Preparation (GHZ State Entanglement)
-Learns a target $N$-qubit Greenberger-Horne-Zeilinger (GHZ) state $|\text{GHZ}\rangle = \frac{|00\dots0\rangle + |11\dots1\rangle}{\sqrt{2}}$ using JAX automatic differentiation (`jax.grad`) and the Adam optimizer.
-
-* **Script:** `examples/01_state_preparation.py`
-* **Command:** `python3 examples/01_state_preparation.py`
-* **Physics Plot:** Shows optimization convergence and state fidelity matching $F \approx 1.0$.
-
-![State Preparation Plot](examples/plots/01_state_prep.png)
-
----
-
-### 2. Variational Quantum Classifier (VQC)
-A quantum machine learning model trained to solve the classic XOR classification boundary problem. Demonstrates `jax.vmap` batch evaluation over datasets with zero overhead.
-
-* **Script:** `examples/02_vqc_classification.py`
-* **Command:** `python3 examples/02_vqc_classification.py`
-* **ML Boundary Plot:** Displays the dynamic decision boundary generated by the trained parameterized quantum neural network.
-
-![VQC Classification Plot](examples/plots/02_vqc_boundary.png)
-
----
-
-### 3. GPU VRAM & Qubit Scaling Benchmark
-Benchmarks simulation performance scaling from **4 to 29 qubits** under memory constraints. Features uncompiled vs. JIT execution times, linear speedups, VRAM tracking, and GPU throughput on an **RTX GPU**.
-
-* **Script:** `examples/03_benchmarks.py`
-* **Command:** `python3 examples/03_benchmarks.py`
-* **Hardware Benchmark Plots (6-Panel):**
-
-![GPU VRAM Scaling Plot](examples/plots/benchmark_20260524_074903.png)
-
----
-
-### 4. Variational Quantum Eigensolver (VQE) for $H_2$ Molecule
-Finds the ground state energy curve of the Hydrogen molecule ($H_2$) to **chemical accuracy (< 1.6 mHartree)**. Maps the molecular Hamiltonian via the Jordan-Wigner transformation.
-
-* **Script:** `examples/04_vqe_h2_molecule.py`
-* **Command:** `python3 examples/04_vqe_h2_molecule.py`
-* **Molecular PES Plot:** Maps the Potential Energy Surface (PES) curve showing ground state chemical bounds.
-
-![VQE H2 Molecule Ground State](examples/plots/vqe_20260524_081232.png)
-
----
-
-### 5. Quantum Approximate Optimization Algorithm (QAOA) for MaxCut
-Solves the MaxCut problem on a 6-node weighted graph using QAOA at depths $p = 1 \dots 5$. Compares approximation ratios against classical brute-force limits.
-
-* **Script:** `examples/05_qaoa_maxcut.py`
-* **Command:** `python3 examples/05_qaoa_maxcut.py`
-* **QAOA Optimization Plots:**
-
-![QAOA MaxCut Optimization](examples/plots/qaoa_20260524_081242.png)
-
----
-
-### 6. Barren Plateau Phenomenon
-Verifies the infamous exponential vanishing of gradients for deep random parameterized quantum circuits. Fits the decay variance curve ($Var[\partial_{\theta} \langle O \rangle] \sim 2^{-\alpha N}$) and maps the 2D optimization landscape.
-
-* **Script:** `examples/06_barren_plateaus.py`
-* **Command:** `python3 examples/06_barren_plateaus.py`
-* **Physics & Landscape Plots:**
-
-![Barren Plateau Variance Decay](examples/plots/barren_plateau_20260524_081324.png)
-
----
-
-## 📊 GPU Benchmark Results
-
-Memory footprint scaling:
-
-| Qubits | State Size | VRAM Usage |
-|--------|-----------|------------|
-| 10 | 8 KB | ~50 MiB |
-| 16 | 512 KB | ~150 MiB |
-| 20 | 8 MB | ~400 MiB |
-| 24 | 128 MB | ~900 MiB |
-| 26 | 512 MB | ~1.8 GB |
-| 27 | 1 GB | ~3.0 GB |
-| 28 | 2 GB | ~3.8 GB |
-| 29 | 4 GB | **VRAM limit** |
-
-JIT speedup: **up to 400× faster** than uncompiled execution for large circuits.
-
----
-
-## 📂 Project Structure
-
-```
-qauntum machine learning/
-├── jax_qsim/
-│   ├── __init__.py          — Public API
-│   ├── core.py              — State vector + tensordot gate engine
-│   ├── ops.py               — Gates: H, X, Y, Z, S, T, CNOT, CZ, SWAP, RX/RY/RZ, ...
-│   ├── observables.py       — PauliString, Hamiltonian, expectation, sample()
-│   ├── noise.py             — Kraus channels: depolarizing, amplitude/phase damping
-│   └── circuit.py           — Circuit builder + JAX compiler
-├── examples/
-│   ├── 01_state_preparation.py   — Learn GHZ state with Adam
-│   ├── 02_vqc_classification.py  — VQC classifier on XOR (jax.vmap)
-│   ├── 03_benchmarks.py          — GPU VRAM scaling + benchmarks
-│   ├── 04_vqe_h2_molecule.py     — VQE: H₂ ground state energy
-│   ├── 05_qaoa_maxcut.py         — QAOA: MaxCut problem
-│   └── 06_barren_plateaus.py     — Barren plateau research
-├── tests/
-│   ├── test_gates.py             — Gate unitarity + application tests
-│   ├── test_differentiation.py   — Gradient vs. finite difference tests
-│   └── test_circuits.py          — Integration: GHZ, Hamiltonian, noise
-├── results/                      — CSV/JSON output from experiments
-├── examples/plots/               — All generated plots (PNG, 180 DPI)
-├── requirements.txt
-├── run_gpu.sh                    — WSL2 GPU launcher script
-└── README.md
+### 3. Initialize Repository on TPU VM Mesh
+Still inside the mesh SSH session, clone the repository to all physical hosts:
+```bash
+git clone https://github.com/AshiteshSingh/jax-quantum-research.git
 ```
 
----
+### 4. Run & Control TPU Execution via Cloud Shell
+Exit the TPU VM SSH session to return to your **Cloud Shell console**. We have created an automation controller script `run_tpu.sh` to make managing the cluster easy.
 
-## 📖 API Reference
-
-### `Circuit`
-```python
-c = Circuit(num_qubits=4)
-c.h(0).cnot(0, 1).ry(0, param_index=0).rz(0, param_index=1)
-
-state = c.run(params)           # Execute → state tensor (2, ..., 2)
-state = c.compile()(params)     # JIT-compiled version
+Run the launcher from your Cloud Shell:
+```bash
+chmod +x run_tpu.sh
+./run_tpu.sh
 ```
-
-### `PauliString`
-```python
-obs = PauliString({0: 'X', 1: 'Y', 2: 'Z'})   # X₀ Y₁ Z₂
-val = expectation(state, obs)                    # ⟨ψ|O|ψ⟩
-```
-
-### `Hamiltonian`
-```python
-H = Hamiltonian(coeffs=[1.0, -0.5], paulis=[PauliString({0:'Z'}), PauliString({1:'Z'})])
-energy = H.expectation(state)
-```
-
-### Noise Channels
-```python
-from jax_qsim.noise import depolarizing_channel, apply_channel
-kraus = depolarizing_channel(p=0.1)
-new_state, new_key = apply_channel(state, kraus, targets=[0], key=key)
-```
+The script provides interactive options:
+* **`1` (TERMINATE):** Instantly kills any zombie Python processes locked on `libtpu.so` across all workers (crucial if a previous run crashed or hung).
+* **`2` (SYNC & RUN):** Syncs all workers with your latest git commit, compiles, and runs the entire 8-experiment suite.
+* **`3` (DOWNLOAD):** Archives only the CSV/JSON results and high-res PNG plots generated from the run and pulls them to your local PC.
+* **`4` (CLEANUP):** Clears output directories on the cluster to reset storage space.
 
 ---
 
-## 📚 References
+## 🔬 Unified Research Suite (8 Experiments)
 
-1. **McClean et al.** (2018). *Barren plateaus in quantum neural network training landscapes*. Nature Communications 9, 4812. https://doi.org/10.1038/s41467-018-07090-4
+Both platforms cover high-fidelity experiments illustrating advanced physics phenomena:
 
-2. **Peruzzo et al.** (2014). *A variational eigenvalue solver on a photonic quantum processor*. Nature Communications 5, 4213. https://doi.org/10.1038/ncomms5213
+| Exp | Name | Core Physics Concepts | JAX/Hardware Operations |
+|:---:|---|---|---|
+| **1** | **GHZ State Preparation** | Quantum Entanglement $|\text{GHZ}\rangle = \frac{|000\rangle+|111\rangle}{\sqrt{2}}$ | Reverse-mode Auto-Diff, Adam optimizer |
+| **2** | **VQC XOR Classifier** | Variational Classifiers, Quantum Feature Mapping | `jax.vmap` high-speed batch evaluation |
+| **3** | **VQE $H_2$ Ground State** | Molecular Orbitals, STO-3G potential energy surfaces | Jordan-Wigner Hamiltonian transformations |
+| **4** | **QAOA MaxCut** | Discrete Combinatorial Optimization, Graph cuts | Parametric gate compilation & JIT |
+| **5** | **Quantum Noise Simulation** | System-bath interactions, Kraus maps | Stochastic Monte Carlo Trajectory method |
+| **6** | **Noisy NISQ Simulation** | Gate errors, physical decay | Depolarizing quantum gate channels |
+| **7** | **Barren Plateau Study** | Parameterized Quantum Circuits (PQCs) | Exponential gradient decay fits, 2D Loss Landscapes |
+| **8** | **High-Perf Scaling Benchmark** | State-vector scaling limit limits (up to **33 qubits/64 GB**) | TPU multi-device `PositionalSharding` & `lax.fori_loop` |
 
-3. **Farhi, Goldstone & Gutmann** (2014). *A Quantum Approximate Optimization Algorithm*. arXiv:1411.4028.
+---
 
-4. **Seeley, Richard & Love** (2012). *The Bravyi-Kitaev transformation for quantum computation of electronic structure*. J. Chem. Phys. 137, 224109.
+## 📊 Hardware Benchmarks & Performance Comparison
 
-5. **Bradbury et al.** (2018). *JAX: composable transformations of Python+NumPy programs*. http://github.com/google/jax
+### Local GPU (RTX 2050 4 GB VRAM)
+* **Max Qubits:** 29 qubits ($2^{29} \times 8$ bytes $\approx$ 4.29 GB VRAM saturation limit).
+* **JIT Speedup:** Up to **400× faster** compared to uncompiled Python loops.
+* **Output Plots:** Saves detailed convergence plots to `examples/plots/`.
+
+### Distributed Cloud TPU (v5e-16 Cluster, 256 GB HBM2e)
+* **Max Qubits:** **33 qubits** successfully benchmarked ($2^{33} \times 8$ bytes $\approx$ 64.00 GB distributed state vector).
+* **Scaling speed:** Scales seamlessly up to 33 qubits in **154 seconds** total run time due to high-performance `lax.fori_loop` vectorizations.
+* **Watermarked Graphs:** The benchmark suite saves a 6-panel performance plot (`tpu_benchmark_[timestamp].png`) containing exact scaling fit laws directly in `examples/plots/`.
+
+---
+
+## 📝 TPU Results Download Guide
+When you run the TPU suite, it outputs files with a unique run timestamp (e.g. `20260524_110111`). You can easily download them by running:
+```bash
+./run_tpu.sh
+```
+Select **Option 3**, enter your run timestamp `20260524_110111`, and the script will automatically pack the results (`.csv`, `.json`, `.png` plot, and the full console log `.txt` file) and trigger a browser download popup.
 
 ---
 
 ## 📄 License
-
-MIT License — see [LICENSE](LICENSE) for details.
-
----
+This JAX research suite is licensed under the MIT License.
 
 <div align="center">
-Built with ❤️ using <b>JAX</b>, <b>NumPy</b>, and <b>Matplotlib</b>
+Built with ❤️ by JAX Quantum Computing Researchers
 </div>
