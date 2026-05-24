@@ -19,7 +19,6 @@ import numpy as np
 
 os.environ["XLA_PYTHON_CLIENT_PREALLOCATE"] = "false"
 
-# ── Headless Matplotlib (must be set before pyplot import) ───────────────────
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
@@ -32,12 +31,10 @@ from jax.sharding import PositionalSharding
 
 warnings.filterwarnings("ignore", category=jnp.ComplexWarning)
 warnings.filterwarnings("ignore", message="Casting complex values")
-warnings.filterwarnings("ignore", message="Glyph")          # suppress emoji/unicode font warnings
-warnings.filterwarnings("ignore", category=UserWarning)     # suppress all matplotlib UserWarnings
+warnings.filterwarnings("ignore", message="Glyph")          
+warnings.filterwarnings("ignore", category=UserWarning)     
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Global timestamp, output directories
-# ─────────────────────────────────────────────────────────────────────────────
+
 TS = datetime.now().strftime("%Y%m%d_%H%M%S")
 os.makedirs("tpu/results",       exist_ok=True)
 os.makedirs("tpu/plots",         exist_ok=True)
@@ -46,9 +43,7 @@ BACKEND = jax.default_backend()
 DEVICES = jax.devices()
 NUM_DEV  = len(DEVICES)
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Shared Dark Theme
-# ─────────────────────────────────────────────────────────────────────────────
+
 P = {
     "bg":"#0d1117","panel":"#161b22","border":"#30363d","text":"#e6edf3",
     "sub":"#8b949e","a1":"#58a6ff","a2":"#3fb950","a3":"#f78166",
@@ -78,10 +73,7 @@ def fmt_bytes(b):
         b /= 1024
     return f"{b:.2f} PB"
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Pure-JAX Quantum Simulator Primitives
-# (No jax_qsim dependency — everything inline)
-# ─────────────────────────────────────────────────────────────────────────────
+# 
 
 def zero_state(n):
     """Return |0⟩^⊗n as a complex64 tensor of shape (2,)*n."""
@@ -107,8 +99,7 @@ def apply_cnot(state, c, t, n):
         if dest[i] is None: dest[i] = k; k += 1
     return jnp.transpose(out, dest)
 
-# Gate constructors
-def H():   return jnp.array([[1,1],[1,-1]], dtype=jnp.complex64)/jnp.sqrt(2.)
+ def H():   return jnp.array([[1,1],[1,-1]], dtype=jnp.complex64)/jnp.sqrt(2.)
 def X():   return jnp.array([[0,1],[1,0]], dtype=jnp.complex64)
 def RX(θ): c=jnp.cos(θ/2); s=-1j*jnp.sin(θ/2); return jnp.array([[c,s],[s,c]])
 def RY(θ): c=jnp.cos(θ/2); s=jnp.sin(θ/2);     return jnp.array([[c,-s],[s,c]])
@@ -125,7 +116,7 @@ def pauli_zz_expectation(state, q0, q1, n):
     """⟨Z_q0 Z_q1⟩"""
     probs   = jnp.abs(state)**2
     axes    = tuple(i for i in range(n) if i not in (q0,q1))
-    marginal= jnp.sum(probs, axis=axes)   # shape (2,2)
+    marginal= jnp.sum(probs, axis=axes)    
     return jnp.real(marginal[0,0] - marginal[0,1] - marginal[1,0] + marginal[1,1])
 
 def pauli_x_expectation(state, qubit, n):
