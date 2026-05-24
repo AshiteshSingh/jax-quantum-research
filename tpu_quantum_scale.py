@@ -698,7 +698,7 @@ def run_tpu_benchmark():
              "num_gates":ng,"t_uncompiled_s":t_eager if not math.isnan(t_eager) else 0.,
              "t_jit_compile_s":t_jit_c,"t_jit_mean_s":tjm,"t_jit_std_s":tjs,
              "speedup_x":sp,"gates_per_second":gps,"hbm_used_mib":hbm_delta,
-             "hbm_total_gb":total_raw_gb}
+             "hbm_total_gb":TOTAL_HBM_GB}
         results.append(r)
 
         print("  "+frow(
