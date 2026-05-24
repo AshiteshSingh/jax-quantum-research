@@ -30,6 +30,8 @@ import jax.numpy as jnp
 
 warnings.filterwarnings("ignore", category=jnp.ComplexWarning)
 warnings.filterwarnings("ignore", message="Casting complex values")
+warnings.filterwarnings("ignore", message="Glyph")          # suppress emoji/unicode font warnings
+warnings.filterwarnings("ignore", category=UserWarning)     # suppress all matplotlib UserWarnings
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Global timestamp, output directories
