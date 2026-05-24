@@ -9,14 +9,6 @@
 ![TRC Supported](https://img.shields.io/badge/Supported_by-TPU_Research_Cloud-blue?style=for-the-badge&logo=google-cloud&color=4285F4)
 
 <br/>
-<a href="https://github.com/google/jax"><img src="jax.png" width="35" height="35" align="center" alt="JAX"></a>
-<img src="antigravity.png" width="35" height="35" align="center" alt="Antigravity">
-<img src="gemini.png" width="35" height="35" align="center" alt="Gemini">
-<img src="claude.png" width="35" height="35" align="center" alt="Claude">
-<img src="deepseek.png" width="35" height="35" align="center" alt="DeepSeek">
-<br/>
-
-<br/>
 <img src="gpu/plots/quantum_header_animation.gif" width="280" height="280" alt="Bloch Sphere Dynamics">
 <br/>
 
