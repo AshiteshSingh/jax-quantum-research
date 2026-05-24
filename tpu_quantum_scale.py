@@ -628,14 +628,17 @@ def run_tpu_benchmark():
     print("  "+sep); print("  "+frow(*HDR)); print("  "+sep)
 
     results = []
-    
+
     # ── Sharding layout across all TPU chips ──
     sharding = PositionalSharding(jax.devices()).reshape(NUM_DEV)
 
-    # ── Fixed max param count so XLA graph shape is CONSTANT across all n ──
-    MAX_PARAMS = 3 * 36  # = 108, covers up to n=36
+    # ── Small fixed param count: benchmark tests STATE VECTOR scaling, not params.
+    #    lax.fori_loop stores N intermediate carries for gradient backprop,
+    #    each of size 2^n. With 108 params that's 108 × 2^n × 4 bytes → OOM at n=29.
+    #    With 6 params: 6 × 2^34 × 4 = 384 GB — tight but feasible with remat.
+    MAX_PARAMS = 6
 
-    # ── Compilation timeout (seconds) — skip qubit count if compile takes too long
+    # ── Compilation timeout (seconds)
     COMPILE_TIMEOUT = 300.0
 
     for n in range(10, 37):
@@ -648,23 +651,20 @@ def run_tpu_benchmark():
             print(f"  | n={n:2d} | {fmt_bytes(sb)} > {usable_gb:.0f} GB cap -- STOPPING")
             break
 
-        n_params = 3 * n  # actual params used (but padded to MAX_PARAMS)
+        n_params = min(3 * n, MAX_PARAMS)
 
-        def make_fwd(dim_=dim, np_=n_params, max_p_=MAX_PARAMS):
+        def make_fwd(dim_=dim, max_p_=MAX_PARAMS):
             @jax.jit
             def fwd(params):
-                # params is shape (MAX_PARAMS,) — only first np_ are nonzero
-                # 1. Allocate & shard the state across all chips
+                # 1. Allocate & shard
                 state = jnp.ones(dim_, dtype=jnp.complex64) / jnp.sqrt(dim_ + 0.0)
                 state = lax.with_sharding_constraint(state, sharding)
 
-                # 2. Precompute index array (constant across params)
+                # 2. Index array
                 idx = jnp.arange(dim_, dtype=jnp.float32) * (2 * jnp.pi / dim_)
                 idx = lax.with_sharding_constraint(idx, sharding)
 
-                # 3. Phase computation via lax.fori_loop
-                #    Processes one param at a time — NO (MAX_PARAMS, dim) intermediate!
-                #    lax.fori_loop traces the body once → constant XLA graph size.
+                # 3. Phase: fori_loop with only 6 iterations (tiny gradient overhead)
                 def phase_body(k, carry):
                     phase, p, ix = carry
                     phase = phase + p[k] * jnp.sin((k + 1.0) * ix)
@@ -676,11 +676,9 @@ def run_tpu_benchmark():
                     0, max_p_, phase_body, (phase_init, params, idx))
 
                 state = state * jnp.exp(1j * phase_angles)
-
-                # 4. Sharded roll (avoids FFT compilation issues)
                 state = jnp.roll(state, shift=dim_ // 2)
 
-                # 5. Amplitude modulation via lax.fori_loop — same pattern
+                # 4. Amplitude: fori_loop with only 6 iterations
                 def amp_body(k, carry):
                     amp, p, ix = carry
                     amp = amp + 0.1 * p[k] * jnp.cos((k + 1.0) * ix)
@@ -702,14 +700,14 @@ def run_tpu_benchmark():
             return fwd
         fwd_fn = make_fwd()
 
-        def make_grad(dim_=dim, np_=n_params, max_p_=MAX_PARAMS):
-            fwd = make_fwd(dim_, np_, max_p_)
+        def make_grad(dim_=dim, max_p_=MAX_PARAMS):
+            # jax.remat checkpoints the forward: during backprop, intermediates
+            # are RECOMPUTED instead of stored, saving ~50% HBM at cost of 2x compute.
+            fwd = jax.remat(make_fwd(dim_, max_p_))
             return jax.jit(jax.grad(fwd))
         grad_fn = make_grad()
 
-        # Pad params to MAX_PARAMS (zeros beyond n_params have no effect on result)
-        params_full = jnp.zeros((MAX_PARAMS,), dtype=jnp.float32)
-        params_full = params_full.at[:n_params].set(0.5)
+        params_full = jnp.ones((MAX_PARAMS,), dtype=jnp.float32) * 0.5
 
         # ── Forward: compile + execute ──
         hbm0 = get_hbm_mib()
@@ -734,46 +732,56 @@ def run_tpu_benchmark():
             fwd_times.append(time.perf_counter() - t0)
         t_fwd = float(np.mean(fwd_times))
 
-        # ── Gradient: compile + execute ──
+        # ── Gradient: compile + execute (may OOM at large n — that's OK) ──
+        t_grad_compile = -1.0
+        t_grad = -1.0
+        grad_ok = True
         t0 = time.perf_counter()
         try:
             g = grad_fn(params_full); g.block_until_ready()
+            t_grad_compile = time.perf_counter() - t0
         except Exception as e:
-            print(f"  | n={n:2d} | GRAD FAILED: {e}"); break
-        t_grad_compile = time.perf_counter() - t0
+            t_grad_compile = time.perf_counter() - t0
+            print(f"  | n={n:2d} | GRAD OOM (expected at large n): {type(e).__name__}")
+            grad_ok = False
 
-        if t_grad_compile > COMPILE_TIMEOUT:
-            print(f"  | n={n:2d} | GRAD compile took {t_grad_compile:.0f}s > {COMPILE_TIMEOUT:.0f}s -- STOPPING")
-            break
+        if grad_ok and t_grad_compile > COMPILE_TIMEOUT:
+            print(f"  | n={n:2d} | GRAD compile took {t_grad_compile:.0f}s — slow but continuing FWD-only")
+            grad_ok = False
 
-        # Gradient exec (cached)
-        grad_times = []
-        for _ in range(5):
-            t0 = time.perf_counter()
-            g = grad_fn(params_full); g.block_until_ready()
-            grad_times.append(time.perf_counter() - t0)
-        t_grad = float(np.mean(grad_times))
+        if grad_ok:
+            grad_times = []
+            for _ in range(5):
+                t0 = time.perf_counter()
+                g = grad_fn(params_full); g.block_until_ready()
+                grad_times.append(time.perf_counter() - t0)
+            t_grad = float(np.mean(grad_times))
 
-        ops_per_fwd = dim * 6   # ~6 vectorized passes over 2^n elements
+        ops_per_fwd = dim * 6
         throughput  = ops_per_fwd / t_fwd if t_fwd > 0 else 0
 
         r = {"n_qubits":n, "state_size_bytes":sb, "state_size_str":fmt_bytes(sb),
              "num_ops": ops_per_fwd,
              "t_fwd_compile_s":t_fwd_compile, "t_fwd_exec_s":t_fwd,
-             "t_grad_compile_s":t_grad_compile, "t_grad_exec_s":t_grad,
+             "t_grad_compile_s":t_grad_compile if grad_ok else -1,
+             "t_grad_exec_s":t_grad if grad_ok else -1,
+             "grad_ok": grad_ok,
              "hbm_used_mib":hbm_delta, "hbm_total_gb":TOTAL_HBM_GB,
              "throughput_ops_s": throughput}
         results.append(r)
 
+        grad_compile_str = f"{t_grad_compile:.3f}" if grad_ok else "OOM"
+        grad_exec_str    = f"{t_grad:.5f}" if grad_ok else "OOM"
+
         print("  "+frow(
             n, fmt_bytes(sb),
             f"{t_fwd_compile:.3f}", f"{t_fwd:.5f}",
-            f"{t_grad_compile:.3f}", f"{t_grad:.5f}",
+            grad_compile_str, grad_exec_str,
             f"{hbm_delta:.1f} MiB" if hbm_delta>0 else "N/A",
             f"{throughput/1e9:.2f}G/s" if throughput>=1e9 else
             f"{throughput/1e6:.2f}M/s" if throughput>=1e6 else f"{throughput:.1f}/s"
         ))
-        sys.stdout.flush()  # ensure output appears immediately on TPU VMs
+        sys.stdout.flush()
 
     print("  "+sep)
     if not results: print("  No results collected."); return
@@ -795,8 +803,11 @@ def run_tpu_benchmark():
     ns   = [r["n_qubits"]         for r in results]
     fwdc = [r["t_fwd_compile_s"]  for r in results]
     fwde = [r["t_fwd_exec_s"]     for r in results]
-    grdc = [r["t_grad_compile_s"] for r in results]
-    grde = [r["t_grad_exec_s"]    for r in results]
+    # Gradient data: only where gradient succeeded
+    grad_results = [r for r in results if r.get("grad_ok", True)]
+    ns_g = [r["n_qubits"]         for r in grad_results]
+    grdc = [r["t_grad_compile_s"] for r in grad_results]
+    grde = [r["t_grad_exec_s"]    for r in grad_results]
     smb  = [r["state_size_bytes"]/(1<<20) for r in results]
     hbm  = [r["hbm_used_mib"]     for r in results]
     tput = [r["throughput_ops_s"]  for r in results]
@@ -808,7 +819,8 @@ def run_tpu_benchmark():
     # (0,0) Forward + Gradient execution time
     ax0 = fig.add_subplot(gsp[0,0])
     ax0.semilogy(ns, fwde, "o-", color=P["a1"], lw=2.5, ms=7, label="Forward exec")
-    ax0.semilogy(ns, grde, "s-", color=P["a3"], lw=2.5, ms=7, label="Gradient exec")
+    if ns_g:
+        ax0.semilogy(ns_g, grde, "s-", color=P["a3"], lw=2.5, ms=7, label="Gradient exec")
     ax0.set_xlabel("Qubits"); ax0.set_ylabel("Time (s) [log]")
     ax0.set_title("Execution Time Scaling (FWD + GRAD)")
     ax0.legend(facecolor=P["panel"],edgecolor=P["border"],labelcolor=P["text"],fontsize=9)
@@ -818,8 +830,9 @@ def run_tpu_benchmark():
     ax1 = fig.add_subplot(gsp[0,1])
     ax1.semilogy(ns, fwdc, "o--", color=P["a5"], lw=2, ms=6, label="FWD compile")
     ax1.semilogy(ns, fwde, "o-",  color=P["a1"], lw=2, ms=6, label="FWD exec")
-    ax1.semilogy(ns, grdc, "s--", color=P["a4"], lw=2, ms=6, label="GRAD compile")
-    ax1.semilogy(ns, grde, "s-",  color=P["a3"], lw=2, ms=6, label="GRAD exec")
+    if ns_g:
+        ax1.semilogy(ns_g, grdc, "s--", color=P["a4"], lw=2, ms=6, label="GRAD compile")
+        ax1.semilogy(ns_g, grde, "s-",  color=P["a3"], lw=2, ms=6, label="GRAD exec")
     ax1.set_xlabel("Qubits"); ax1.set_ylabel("Time (s) [log]")
     ax1.set_title("Compile vs Execute Time Breakdown")
     ax1.legend(facecolor=P["panel"],edgecolor=P["border"],labelcolor=P["text"],fontsize=8)
@@ -854,16 +867,18 @@ def run_tpu_benchmark():
 
     # (2,1) Exponential scaling law
     ax5 = fig.add_subplot(gsp[2,1])
-    lt  = np.log2(np.array(grde) + 1e-12)
-    cf  = np.polyfit(ns, lt, 1)
-    nf  = np.linspace(min(ns), max(ns), 200)
-    ax5.scatter(ns, grde, color=P["a1"], s=55, zorder=5, label="GRAD exec data")
-    ax5.plot(nf, 2**np.poly1d(cf)(nf), "-", color=P["a3"], lw=2.5,
-             label=f"Exp fit: 2^({cf[0]:.3f}n)")
+    if len(ns_g) >= 2:
+        lt  = np.log2(np.array(grde) + 1e-12)
+        cf  = np.polyfit(ns_g, lt, 1)
+        nf  = np.linspace(min(ns_g), max(ns_g), 200)
+        ax5.scatter(ns_g, grde, color=P["a1"], s=55, zorder=5, label="GRAD exec data")
+        ax5.plot(nf, 2**np.poly1d(cf)(nf), "-", color=P["a3"], lw=2.5,
+                 label=f"Exp fit: 2^({cf[0]:.3f}n)")
+    slope_str = f"slope = {cf[0]:.3f}" if len(ns_g) >= 2 else "N/A (gradient OOM)"
     ax5.set_yscale("log"); ax5.set_xlabel("Qubits"); ax5.set_ylabel("Time (s) [log]")
-    ax5.set_title(f"Exponential Scaling Law (slope = {cf[0]:.3f})")
+    ax5.set_title(f"Exponential Scaling Law ({slope_str})")
     ax5.legend(facecolor=P["panel"],edgecolor=P["border"],labelcolor=P["text"],fontsize=9)
-    ax5.set_xticks(ns); theme(fig,ax5)
+    ax5.set_xticks(ns_g if ns_g else ns); theme(fig,ax5)
 
     TPU_INFO = (f"Google Cloud TPU v5e-16  |  {NUM_DEV} chips × {MEM_PER_DEV_GB:.0f} GB HBM2e  |  "
                 f"{TOTAL_HBM_GB:.0f} GB total  |  {usable_gb:.0f} GB usable")
