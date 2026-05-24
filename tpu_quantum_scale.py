@@ -27,6 +27,8 @@ import matplotlib.gridspec as gridspec
 
 import jax
 import jax.numpy as jnp
+import jax.lax as lax
+from jax.sharding import PositionalSharding
 
 warnings.filterwarnings("ignore", category=jnp.ComplexWarning)
 warnings.filterwarnings("ignore", message="Casting complex values")
@@ -601,7 +603,8 @@ def get_hbm_mib():
     try:
         s = jax.devices()[0].memory_stats()
         if s and "bytes_in_use" in s:
-            return s["bytes_in_use"]/1024/1024
+            # Multiply by NUM_DEV to reflect total mesh memory since data is sharded
+            return (s["bytes_in_use"]/1024/1024) * NUM_DEV
     except: pass
     return 0.0
 
@@ -613,27 +616,10 @@ def run_tpu_benchmark():
     OS_RESERVE_GB  = 10.0               # flat OS/runtime headroom (user request)
     usable_gb      = TOTAL_HBM_GB - OS_RESERVE_GB  # 246 GB available
 
-    # Math recap:
-    #   n=34 → 2^34 × 8 bytes = 128 GB state vector  ✓ fits in 246 GB
-    #   n=35 → 2^35 × 8 bytes = 256 GB               ✗ exceeds 246 GB → auto-stop
-    # Gradient computation adds ~1-2× state-vector overhead (XLA buffer reuse)
-    # so n=34 is the practical maximum on this hardware.
-
     print(f"  Total HBM           : {TOTAL_HBM_GB:.0f} GB  ({NUM_DEV} chips × {MEM_PER_DEV_GB:.0f} GB)")
     print(f"  OS/runtime reserve  : {OS_RESERVE_GB:.0f} GB  (flat, per user request)")
     print(f"  Usable for compute  : {usable_gb:.0f} GB")
     print(f"  Max safe qubit count: 34  (2^34×8 = 128 GB state vector)\n")
-
-    # ── TPU-friendly benchmark function ──
-    # CRITICAL: We use VECTORIZED flat-vector ops instead of Python for-loops
-    # with tensordot+transpose. Python loops create O(n) traced HLO ops and
-    # the TPU XLA compiler can hang for 20+ minutes compiling the graph.
-    # Vectorized ops compile in seconds while stressing the same 2^n memory.
-    #
-    # The benchmark measures:
-    #   - Allocation of a 2^n complex state vector (quantum memory scaling)
-    #   - Parameterized unitary-like transformation (simulates gate layers)
-    #   - Gradient computation through the entire pipeline (autodiff scaling)
 
     HDR = ("Qubits","State Size","FWD Compile(s)","FWD Exec(s)","GRAD Compile(s)","GRAD Exec(s)","HBM Used","Throughput")
     cw  = (7,11,14,12,15,13,11,18)
@@ -642,6 +628,10 @@ def run_tpu_benchmark():
     print("  "+sep); print("  "+frow(*HDR)); print("  "+sep)
 
     results = []
+    
+    # ── FIX: Create a sharding layout across all 16 TPU chips ──
+    sharding = PositionalSharding(jax.devices()).reshape(NUM_DEV)
+
     for n in range(10, 37):
         sb = (2**n) * 8  # complex64 = 8 bytes
         sg = sb / 1024**3
@@ -654,41 +644,37 @@ def run_tpu_benchmark():
 
         n_params = 3 * n  # same parameter count as original circuit
 
-        # Build JIT-compiled forward function — compiles in seconds, not minutes
         def make_fwd(dim_=dim, np_=n_params):
             @jax.jit
             def fwd(params):
-                # 1. Create |0⟩ state as flat complex vector
-                state = jnp.zeros(dim_, dtype=jnp.complex64)
-                state = state.at[0].set(1.0 + 0j)
-
-                # 2. Hadamard-like superposition (uniform amplitudes)
+                # 1. Allocate and explicitly SHARD the array across all chips
                 state = jnp.ones(dim_, dtype=jnp.complex64) / jnp.sqrt(dim_ + 0.0)
+                state = lax.with_sharding_constraint(state, sharding)
 
-                # 3. Parameterized phase rotation (simulates RZ layer over all qubits)
-                #    Each param controls a frequency component — physically meaningful
+                # 2. Pull arange OUT of the loop to prevent XLA graph bloat
+                idx = jnp.arange(dim_, dtype=jnp.float32) * (2 * jnp.pi / dim_)
+                idx = lax.with_sharding_constraint(idx, sharding)
+
                 phase_angles = jnp.zeros(dim_, dtype=jnp.float32)
+                phase_angles = lax.with_sharding_constraint(phase_angles, sharding)
+
                 for k in range(np_):
-                    phase_angles = phase_angles + params[k] * jnp.sin(
-                        (k + 1.0) * jnp.arange(dim_, dtype=jnp.float32) * (2 * jnp.pi / dim_)
-                    )
+                    phase_angles = phase_angles + params[k] * jnp.sin((k + 1.0) * idx)
+                
                 state = state * jnp.exp(1j * phase_angles)
 
-                # 4. Entanglement-like mixing (DFT-based, couples all amplitudes)
-                state = jnp.fft.fft(state, norm="ortho")
+                # 3. FIX: Replace massive 1D FFT with a sharded roll to prevent XLA compiler bombs
+                state = jnp.roll(state, shift=dim_ // 2)
 
-                # 5. Second parameterized layer (amplitude modulation)
                 amplitudes = jnp.ones(dim_, dtype=jnp.float32)
+                amplitudes = lax.with_sharding_constraint(amplitudes, sharding)
+                
                 for k in range(np_):
-                    amplitudes = amplitudes + 0.1 * params[k] * jnp.cos(
-                        (k + 1.0) * jnp.arange(dim_, dtype=jnp.float32) * (2 * jnp.pi / dim_)
-                    )
+                    amplitudes = amplitudes + 0.1 * params[k] * jnp.cos((k + 1.0) * idx)
+                
                 state = state * amplitudes
-
-                # 6. Normalise (so probabilities sum to 1)
                 state = state / jnp.sqrt(jnp.sum(jnp.abs(state)**2) + 1e-12)
 
-                # 7. Measurement: marginal probability of first qubit being |0⟩ vs |1⟩
                 probs = jnp.abs(state)**2
                 half = dim_ // 2
                 p0 = jnp.sum(probs[:half])
@@ -697,7 +683,6 @@ def run_tpu_benchmark():
             return fwd
         fwd_fn = make_fwd()
 
-        # Build JIT-compiled gradient function
         def make_grad(dim_=dim, np_=n_params):
             fwd = make_fwd(dim_, np_)
             return jax.jit(jax.grad(fwd))
