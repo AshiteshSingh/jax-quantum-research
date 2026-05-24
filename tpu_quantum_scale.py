@@ -611,7 +611,7 @@ def get_hbm_mib():
 def run_tpu_benchmark():
     banner(f"EXPERIMENT 5 — TPU Qubit Scaling Benchmark ({NUM_DEV} devices, {BACKEND.upper()})")
 
-    MEM_PER_DEV_GB = 16.0               # v5litepod-16: 16 GB HBM per chip
+    MEM_PER_DEV_GB = 16.0               # v5e-16: 16 GB HBM per chip
     TOTAL_HBM_GB   = NUM_DEV * MEM_PER_DEV_GB   # 16 chips × 16 GB = 256 GB
     OS_RESERVE_GB  = 10.0               # flat OS/runtime headroom (user request)
     usable_gb      = TOTAL_HBM_GB - OS_RESERVE_GB  # 246 GB available
@@ -629,8 +629,14 @@ def run_tpu_benchmark():
 
     results = []
     
-    # ── FIX: Create a sharding layout across all 16 TPU chips ──
+    # ── Sharding layout across all TPU chips ──
     sharding = PositionalSharding(jax.devices()).reshape(NUM_DEV)
+
+    # ── Fixed max param count so XLA graph shape is CONSTANT across all n ──
+    MAX_PARAMS = 3 * 36  # = 108, covers up to n=36
+
+    # ── Compilation timeout (seconds) — skip qubit count if compile takes too long
+    COMPILE_TIMEOUT = 300.0
 
     for n in range(10, 37):
         sb = (2**n) * 8  # complex64 = 8 bytes
@@ -642,35 +648,37 @@ def run_tpu_benchmark():
             print(f"  | n={n:2d} | {fmt_bytes(sb)} > {usable_gb:.0f} GB cap -- STOPPING")
             break
 
-        n_params = 3 * n  # same parameter count as original circuit
+        n_params = 3 * n  # actual params used (but padded to MAX_PARAMS)
 
-        def make_fwd(dim_=dim, np_=n_params):
+        def make_fwd(dim_=dim, np_=n_params, max_p_=MAX_PARAMS):
             @jax.jit
             def fwd(params):
-                # 1. Allocate and explicitly SHARD the array across all chips
+                # params is shape (MAX_PARAMS,) — only first np_ are nonzero
+                # 1. Allocate & shard the state across all chips
                 state = jnp.ones(dim_, dtype=jnp.complex64) / jnp.sqrt(dim_ + 0.0)
                 state = lax.with_sharding_constraint(state, sharding)
 
-                # 2. Pull arange OUT of the loop to prevent XLA graph bloat
+                # 2. Precompute index array (constant across params)
                 idx = jnp.arange(dim_, dtype=jnp.float32) * (2 * jnp.pi / dim_)
                 idx = lax.with_sharding_constraint(idx, sharding)
 
-                phase_angles = jnp.zeros(dim_, dtype=jnp.float32)
-                phase_angles = lax.with_sharding_constraint(phase_angles, sharding)
-
-                for k in range(np_):
-                    phase_angles = phase_angles + params[k] * jnp.sin((k + 1.0) * idx)
+                # 3. VECTORIZED phase computation — no Python loop!
+                #    k_vals = [1, 2, ..., max_p_], shape (max_p_,)
+                k_vals = jnp.arange(1, max_p_ + 1, dtype=jnp.float32)
+                # sin_matrix: shape (max_p_, dim_) via broadcast
+                # idx shape: (dim_,) -> (1, dim_), k_vals shape: (max_p_,) -> (max_p_, 1)
+                sin_matrix = jnp.sin(k_vals[:, None] * idx[None, :])  # (max_p_, dim_)
+                # Weighted sum: params (max_p_,) @ sin_matrix (max_p_, dim_) -> (dim_,)
+                phase_angles = jnp.dot(params, sin_matrix)
                 
                 state = state * jnp.exp(1j * phase_angles)
 
-                # 3. FIX: Replace massive 1D FFT with a sharded roll to prevent XLA compiler bombs
-                state = state * jnp.exp(-1j * jnp.pi / 4)
+                # 4. Sharded roll (avoids FFT compilation issues)
+                state = jnp.roll(state, shift=dim_ // 2)
 
-                amplitudes = jnp.ones(dim_, dtype=jnp.float32)
-                amplitudes = lax.with_sharding_constraint(amplitudes, sharding)
-                
-                for k in range(np_):
-                    amplitudes = amplitudes + 0.1 * params[k] * jnp.cos((k + 1.0) * idx)
+                # 5. VECTORIZED amplitude modulation — no Python loop!
+                cos_matrix = jnp.cos(k_vals[:, None] * idx[None, :])  # (max_p_, dim_)
+                amplitudes = 1.0 + 0.1 * jnp.dot(params, cos_matrix)
                 
                 state = state * amplitudes
                 state = state / jnp.sqrt(jnp.sum(jnp.abs(state)**2) + 1e-12)
@@ -683,45 +691,55 @@ def run_tpu_benchmark():
             return fwd
         fwd_fn = make_fwd()
 
-        def make_grad(dim_=dim, np_=n_params):
-            fwd = make_fwd(dim_, np_)
+        def make_grad(dim_=dim, np_=n_params, max_p_=MAX_PARAMS):
+            fwd = make_fwd(dim_, np_, max_p_)
             return jax.jit(jax.grad(fwd))
         grad_fn = make_grad()
 
-        params = jnp.ones((n_params,), dtype=jnp.float32) * 0.5
+        # Pad params to MAX_PARAMS (zeros beyond n_params have no effect on result)
+        params_full = jnp.zeros((MAX_PARAMS,), dtype=jnp.float32)
+        params_full = params_full.at[:n_params].set(0.5)
 
         # ── Forward: compile + execute ──
         hbm0 = get_hbm_mib()
         t0 = time.perf_counter()
         try:
-            val = fwd_fn(params); val.block_until_ready()
+            val = fwd_fn(params_full); val.block_until_ready()
         except Exception as e:
             print(f"  | n={n:2d} | FWD FAILED: {e}"); break
         t_fwd_compile = time.perf_counter() - t0
         hbm1 = get_hbm_mib()
         hbm_delta = max(0., hbm1 - hbm0)
 
+        if t_fwd_compile > COMPILE_TIMEOUT:
+            print(f"  | n={n:2d} | FWD compile took {t_fwd_compile:.0f}s > {COMPILE_TIMEOUT:.0f}s -- STOPPING")
+            break
+
         # Forward exec (cached)
         fwd_times = []
         for _ in range(5):
             t0 = time.perf_counter()
-            val = fwd_fn(params); val.block_until_ready()
+            val = fwd_fn(params_full); val.block_until_ready()
             fwd_times.append(time.perf_counter() - t0)
         t_fwd = float(np.mean(fwd_times))
 
         # ── Gradient: compile + execute ──
         t0 = time.perf_counter()
         try:
-            g = grad_fn(params); g.block_until_ready()
+            g = grad_fn(params_full); g.block_until_ready()
         except Exception as e:
             print(f"  | n={n:2d} | GRAD FAILED: {e}"); break
         t_grad_compile = time.perf_counter() - t0
+
+        if t_grad_compile > COMPILE_TIMEOUT:
+            print(f"  | n={n:2d} | GRAD compile took {t_grad_compile:.0f}s > {COMPILE_TIMEOUT:.0f}s -- STOPPING")
+            break
 
         # Gradient exec (cached)
         grad_times = []
         for _ in range(5):
             t0 = time.perf_counter()
-            g = grad_fn(params); g.block_until_ready()
+            g = grad_fn(params_full); g.block_until_ready()
             grad_times.append(time.perf_counter() - t0)
         t_grad = float(np.mean(grad_times))
 
@@ -744,6 +762,7 @@ def run_tpu_benchmark():
             f"{throughput/1e9:.2f}G/s" if throughput>=1e9 else
             f"{throughput/1e6:.2f}M/s" if throughput>=1e6 else f"{throughput:.1f}/s"
         ))
+        sys.stdout.flush()  # ensure output appears immediately on TPU VMs
 
     print("  "+sep)
     if not results: print("  No results collected."); return
@@ -837,7 +856,7 @@ def run_tpu_benchmark():
 
     fig.suptitle(
         f"JAX TPU Quantum Scaling Benchmark  |  {BACKEND.upper()}  |  {NUM_DEV} devices  |  {TS}\n"
-        f"v5litepod-16  |  {TOTAL_HBM_GB:.0f} GB total  |  {usable_gb:.0f} GB usable  |  max n=34 qubits",
+        f"v5e-16  |  {TOTAL_HBM_GB:.0f} GB total  |  {usable_gb:.0f} GB usable  |  max n=34 qubits",
         color=P["text"], fontsize=13, fontweight="bold", y=0.98)
     path = f"examples/plots/tpu_benchmark_{TS}.png"
     plt.savefig(path, dpi=180, bbox_inches="tight", facecolor=P["bg"]); plt.close()
