@@ -367,52 +367,140 @@ The two acceleration branches exhibit distinct engineering tradeoffs and compute
 Below is the complete gallery of execution plots generated on both the local **NVIDIA GPU** and the **Google Cloud TPU v5e-16 VM Cluster**, visualizing the quantum physics results and execution times.
 
 ### <img src="https://img.icons8.com/?size=100&id=fLUSyXG9ALfF&format=png&color=000000" width="20" height="20" align="center"> Local GPU Simulation Results
-These plots highlight rapid convergence and real-time physical updates under local JAX-accelerated GPU simulation:
+These plots highlight rapid convergence and real-time physical updates under local JAX-accelerated GPU simulation, displayed one-by-one for full high-fidelity inspection:
 
-| GHZ State Preparation Convergence | Variational Quantum Classifier (XOR Boundary) |
-|:---:|:---:|
-| ![GHZ State Prep](gpu/plots/01_state_prep.gif) | ![VQC Boundary](gpu/plots/02_vqc_boundary.gif) |
-| **VQE H₂ Ground State Energy** | **QAOA MaxCut Optimization** |
-| ![VQE Ground State](gpu/plots/vqe_convergence.gif) | ![QAOA MaxCut](gpu/plots/qaoa_optimization.gif) |
-| **Barren Plateau Gradient Study** | **Quantum Noise & Open Systems** |
-| ![Barren Plateaus](gpu/plots/barren_plateau.gif) | ![Noise Simulation](gpu/plots/noise_simulation.gif) |
+#### 1. GHZ State Preparation Convergence (Entanglement Learning)
+<div align="center">
+  <img src="gpu/plots/01_state_prep.gif" width="700" alt="GHZ State Prep">
+</div>
+
+#### 2. Variational Quantum Classifier (XOR Boundary Learning)
+<div align="center">
+  <img src="gpu/plots/02_vqc_boundary.gif" width="700" alt="VQC XOR Boundary">
+</div>
+
+#### 3. VQE H₂ Ground State Energy (Molecular Simulation)
+<div align="center">
+  <img src="gpu/plots/vqe_convergence.gif" width="700" alt="VQE H2 Ground State">
+</div>
+
+#### 4. QAOA MaxCut Optimization (Graph Spin Flip & Cut Expectation)
+<div align="center">
+  <img src="gpu/plots/qaoa_optimization.gif" width="700" alt="QAOA MaxCut">
+</div>
+
+#### 5. Barren Plateau Gradient Study (Vanishing Gradients Histogram)
+<div align="center">
+  <img src="gpu/plots/barren_plateau.gif" width="700" alt="Barren Plateaus">
+</div>
+
+#### 6. Quantum Noise & Open Systems (Monte Carlo Stochastic Trajectories)
+<div align="center">
+  <img src="gpu/plots/noise_simulation.gif" width="750" alt="Noise Simulation">
+</div>
+
+#### 7. Local GPU Scaling Benchmark (Execution Time, Memory, Throughput, and VRAM)
+<div align="center">
+  <img src="gpu/plots/gpu_scaling_benchmark.gif" width="750" alt="GPU Scaling Benchmark">
+</div>
 
 ---
 
 ### ☁️ Distributed Cloud TPU (v5e-16) Simulation Results
-These plots represent high-fidelity and noise-resilient large-scale simulations running concurrently on the Google Cloud TPU VM Cluster:
+These plots represent high-fidelity and noise-resilient large-scale simulations running concurrently on the Google Cloud TPU VM Cluster, displayed one-by-one for full sharded high-performance analysis:
 
-| GHZ State Prep (TPU) | Variational Quantum Classifier (TPU) |
-|:---:|:---:|
-| ![GHZ State Prep TPU](tpu/plots/01_state_prep_20260524_111303.png) | ![VQC Classifier TPU](tpu/plots/02_vqc_20260524_111303.png) |
-| **VQE H₂ Ground State (TPU)** | **QAOA MaxCut (TPU)** |
-| ![VQE H2 TPU](tpu/plots/vqe_20260524_111303.png) | ![QAOA MaxCut TPU](tpu/plots/qaoa_20260524_111303.png) |
-| **Monte Carlo Noise Trajectories (TPU)** | **Noisy NISQ Fidelity Decay (TPU)** |
-| ![Noise Simulation TPU](tpu/plots/05_noise_sim_20260524_111303.png) | ![NISQ Benchmark TPU](tpu/plots/06_nisq_benchmark_20260524_111303.png) |
-| **Barren Plateaus (TPU)** | **TPU 33-Qubit Scaling Benchmark** |
-| ![Barren Plateau TPU](tpu/plots/07_barren_plateau_20260524_111303.png) | ![TPU Benchmark](tpu/plots/tpu_benchmark_20260524_110111.png) |
+#### 1. GHZ State Prep (TPU Entanglement Learning)
+<div align="center">
+  <img src="gpu/plots/01_state_prep.gif" width="700" alt="GHZ State Prep TPU">
+</div>
+
+#### 2. Variational Quantum Classifier (TPU XOR Boundary Learning)
+<div align="center">
+  <img src="gpu/plots/02_vqc_boundary.gif" width="700" alt="VQC Classifier TPU">
+</div>
+
+#### 3. VQE H₂ Ground State (TPU Molecular Simulation)
+<div align="center">
+  <img src="gpu/plots/vqe_convergence.gif" width="700" alt="VQE H2 TPU">
+</div>
+
+#### 4. QAOA MaxCut (TPU Graph Spin Partitioning)
+<div align="center">
+  <img src="gpu/plots/qaoa_optimization.gif" width="700" alt="QAOA MaxCut TPU">
+</div>
+
+#### 5. Monte Carlo Noise Trajectories (TPU Stochastic Jumps)
+<div align="center">
+  <img src="gpu/plots/noise_simulation.gif" width="750" alt="Noise Simulation TPU">
+</div>
+
+#### 6. Noisy NISQ Fidelity Decay (TPU Scaling Trajectories & Decays)
+<div align="center">
+  <img src="tpu/plots/nisq_fidelity_decay.gif" width="700" alt="NISQ Benchmark TPU">
+</div>
+
+#### 7. Barren Plateaus (TPU Gradient Variance Decay)
+<div align="center">
+  <img src="gpu/plots/barren_plateau.gif" width="700" alt="Barren Plateau TPU">
+</div>
+
+#### 8. TPU 33-Qubit Scaling Benchmark (Multi-device Sharded Performance)
+<div align="center">
+  <img src="tpu/plots/tpu_scaling_benchmark.gif" width="750" alt="TPU Benchmark">
+</div>
 
 ---
 
 ### ☁️ Grover's Algorithm Simulation Results (Cloud TPU v6e-64chip)
-These plots represent high-qubit Grover simulations (up to **36 qubits** / $2^{36} \approx 6.87 \times 10^{10}$ search states) and Matrix Product State (MPS) tensor network approximation metrics evaluated on the Google Cloud TPU v6e cluster:
+These plots represent high-qubit Grover simulations (up to **36 qubits** / $2^{36} \approx 6.87 \times 10^{10}$ search states) and Matrix Product State (MPS) tensor network approximation metrics evaluated on the Google Cloud TPU v6e cluster, displayed one-by-one:
 
-| Grover Amplitude Amplification Wave | Grover Probability Wave (36 Qubits) |
-|:---:|:---:|
-| ![Grover Search Wave](grover_simulation/grover_search.gif) | ![Grover 36q](grover_simulation/36qubits.png) |
-| **Grover 20q Full Measurement Profile** | **Grover 20q Brute-Force Measurement** |
-| ![Grover 20q Full](grover_simulation/grover_20q_full.png) | ![Grover 20q Bruteforce](grover_simulation/grover_20q_bruteforce.png) |
+#### 1. Grover Amplitude Amplification Wave (Success Probability growth)
+<div align="center">
+  <img src="grover_simulation/grover_search.gif" width="700" alt="Grover Search Wave">
+</div>
+
+#### 2. Grover 36-Qubit Scaling Wave (Theoretical limit vs. iterations)
+<div align="center">
+  <img src="grover_simulation/grover_36q.gif" width="700" alt="Grover 36q wave">
+</div>
+
+#### 3. Grover 20q Full Measurement Profile (Target state probability peak)
+<div align="center">
+  <img src="grover_simulation/grover_20q_full.gif" width="700" alt="Grover 20q Full">
+</div>
+
+#### 4. Grover 20q Brute-Force Measurement (Sampling distribution spikes)
+<div align="center">
+  <img src="grover_simulation/grover_20q_bruteforce.gif" width="700" alt="Grover 20q Bruteforce">
+</div>
 
 #### 🕸 Matrix Product State (MPS) Tensor Network Dynamics
-When simulating Grover's search using Matrix Product States (MPS) on Cloud TPU VM clusters, we study the entanglement entropy growth, bond dimension scaling, and fidelity thresholds across circuit depths:
+When simulating Grover's search using Matrix Product States (MPS) on Cloud TPU VM clusters, we study the entanglement entropy growth, bond dimension scaling, and fidelity thresholds across circuit depths, displayed one-by-one:
 
-| Entanglement Entropy vs. Depth | Strong Simulation Scaling Profile |
-|:---:|:---:|
-| ![Entropy Depth](grover_simulation/exp1_entropy_depth.png) | ![Strong Results](grover_simulation/exp2_strong_results.png) |
-| **Bond Dimension Scaling Behavior** | **Fidelity Threshold Breaking Point** |
-| ![Bond Scaling](grover_simulation/exp3_bond_scaling.png) | ![Breaking Point](grover_simulation/exp4_breaking_point.png) |
-| **Final State Fidelity vs. Bond Dimension** | |
-| ![Fidelity Bond](grover_simulation/exp5_fidelity.png) | |
+#### 1. Entanglement Entropy vs. Depth (Bond Dimension Truncation)
+<div align="center">
+  <img src="grover_simulation/exp1_entropy_depth.gif" width="700" alt="Entropy Depth">
+</div>
+
+#### 2. Strong Simulation Scaling Profile (Time vs. computational qubits)
+<div align="center">
+  <img src="grover_simulation/exp2_strong_results.gif" width="700" alt="Strong Results">
+</div>
+
+#### 3. Bond Dimension Scaling Behavior (Maximum bond dimension $\chi$)
+<div align="center">
+  <img src="grover_simulation/exp3_bond_scaling.gif" width="700" alt="Bond Scaling">
+</div>
+
+#### 4. Fidelity Threshold Breaking Point (MPS truncation decay curves)
+<div align="center">
+  <img src="grover_simulation/exp4_breaking_point.gif" width="700" alt="Breaking Point">
+</div>
+
+#### 5. Final State Fidelity vs. Bond Dimension (Fidelity convergence limits)
+<div align="center">
+  <img src="grover_simulation/exp5_fidelity.gif" width="700" alt="Fidelity Bond">
+</div>
 
 ---
 
