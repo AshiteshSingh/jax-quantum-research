@@ -174,26 +174,19 @@ from functools import partial
 # Flat 1-D state-vector gate primitives  (JAX JIT, shard-aware)
 # ─────────────────────────────────────────────────────────────────────────────
 
+H_MAT = jnp.array([[1, 1], [1, -1]], dtype=jnp.complex64) / jnp.sqrt(2.0)
+
 @partial(jax.jit, static_argnums=(1, 2))
 def _hadamard_single(state, q, n_counting):
-    dim_c = 1 << n_counting
-    stride = 1 << (n_counting - 1 - q)
-    idx_c = jnp.arange(dim_c, dtype=jnp.int32)
-    idx_c = lax.with_sharding_constraint(idx_c, SHARDING.reshape(NUM_DEV))
+    dim_w = state.shape[1]
+    shape1 = 1 << q
+    shape2 = 1 << (n_counting - 1 - q)
     
-    bit_q = (idx_c >> (n_counting - 1 - q)) & 1
-    partner_c = idx_c ^ stride
+    s = state.reshape((shape1, 2, shape2, dim_w))
+    s = jnp.tensordot(H_MAT, s, axes=([1], [1]))
+    s = jnp.swapaxes(s, 0, 1)
     
-    inv_sqrt2 = jnp.float32(1.0 / np.sqrt(2.0))
-    amp_self = state
-    amp_partner = state[partner_c, :]
-    
-    bit_q = bit_q[:, None]
-    return jnp.where(
-        bit_q == 0,
-        (amp_self + amp_partner) * inv_sqrt2,
-        (amp_partner - amp_self) * inv_sqrt2,
-    )
+    return s.reshape(state.shape)
 
 def hadamard_flat(state, q, n_counting):
     return _hadamard_single(state, q, n_counting)
@@ -220,15 +213,21 @@ def ctrl_phase_flat(state, ctrl, tgt, n_counting, theta):
 
 @partial(jax.jit, static_argnums=(1, 2, 3))
 def _swap_single(state, q1, q2, n_counting):
-    dim_c = 1 << n_counting
-    idx_c = jnp.arange(dim_c, dtype=jnp.int32)
-    idx_c = lax.with_sharding_constraint(idx_c, SHARDING.reshape(NUM_DEV))
+    if q1 == q2:
+        return state
+        
+    q_min = min(q1, q2)
+    q_max = max(q1, q2)
     
-    bit_q1 = (idx_c >> (n_counting - 1 - q1)) & 1
-    bit_q2 = (idx_c >> (n_counting - 1 - q2)) & 1
-    need_swap = (bit_q1 != bit_q2)[:, None]
-    partner_c = idx_c ^ (1 << (n_counting - 1 - q1)) ^ (1 << (n_counting - 1 - q2))
-    return jnp.where(need_swap, state[partner_c, :], state)
+    dim_w = state.shape[1]
+    shape1 = 1 << q_min
+    shape2 = 1 << (q_max - q_min - 1)
+    shape3 = 1 << (n_counting - 1 - q_max)
+    
+    s = state.reshape((shape1, 2, shape2, 2, shape3, dim_w))
+    s = jnp.swapaxes(s, 1, 3)
+    
+    return s.reshape(state.shape)
 
 def swap_flat(state, q1, q2, n_counting):
     return _swap_single(state, q1, q2, n_counting)
