@@ -175,6 +175,7 @@ def _hadamard_single(state, q, n):
     dim    = 1 << n
     stride = 1 << (n - 1 - q)
     idx    = jnp.arange(dim, dtype=jnp.int32)
+    idx    = lax.with_sharding_constraint(idx, SHARDING)
     bit_q  = (idx >> (n - 1 - q)) & 1
     partner = idx ^ stride
     inv_sqrt2 = jnp.float32(1.0 / np.sqrt(2.0))
@@ -193,6 +194,7 @@ def hadamard_flat(state, q, n):
 def _ctrl_phase_single(state, ctrl, tgt, n, cos_t, sin_t):
     dim   = 1 << n
     idx   = jnp.arange(dim, dtype=jnp.int32)
+    idx   = lax.with_sharding_constraint(idx, SHARDING)
     bit_c = (idx >> (n - 1 - ctrl)) & 1
     bit_t = (idx >> (n - 1 - tgt )) & 1
     phase = jnp.where(
@@ -211,6 +213,7 @@ def ctrl_phase_flat(state, ctrl, tgt, n, theta):
 def _swap_single(state, q1, q2, n):
     dim     = 1 << n
     idx     = jnp.arange(dim, dtype=jnp.int32)
+    idx     = lax.with_sharding_constraint(idx, SHARDING)
     bit_q1  = (idx >> (n - 1 - q1)) & 1
     bit_q2  = (idx >> (n - 1 - q2)) & 1
     need_swap = (bit_q1 != bit_q2)
@@ -242,6 +245,7 @@ from functools import partial
 def _ctrl_mod_mul_jit(state, ctrl_qubit, perm_inv_jax, N, n_work, n):
     dim = 1 << n
     idx = jnp.arange(dim, dtype=jnp.int32)
+    idx = lax.with_sharding_constraint(idx, SHARDING)
     
     # 11 work qubits are contiguous at the end (LSB)
     work_mask = (1 << n_work) - 1
@@ -284,13 +288,35 @@ def ctrl_mod_mul_flat(state, ctrl_qubit, a_val, N, work_qubits, n):
 # Shor's Circuit Runner
 # ─────────────────────────────────────────────────────────────────────────────
 
+# ─────────────────────────────────────────────────────────────────────────────
+# Shor's Circuit Runner & Post-Processing Helpers
+# ─────────────────────────────────────────────────────────────────────────────
+
 @partial(jax.jit, static_argnums=(0, 1, 2))
 def init_state_flat(n_counting, n_work, n):
     dim = 1 << n
     state = jnp.zeros(dim, dtype=jnp.complex64)
+    state = lax.with_sharding_constraint(state, SHARDING)
     work_lsb_qubit = n_counting + n_work - 1
     one_idx = 1 << (n - 1 - work_lsb_qubit)
-    return state.at[one_idx].set(jnp.complex64(1.0))
+    state = state.at[one_idx].set(jnp.complex64(1.0))
+    return lax.with_sharding_constraint(state, SHARDING)
+
+
+@partial(jax.jit, static_argnums=(1, 2))
+def marginalise_probs_jit(state, n_counting, n_work):
+    probs_full = jnp.abs(state) ** 2
+    probs_2d = probs_full.reshape(1 << n_counting, 1 << n_work)
+    return probs_2d.sum(axis=1)
+
+
+@partial(jax.jit, static_argnums=(1, 2))
+def extract_phases_jit(state, n_counting, n_work):
+    limit = min(1 << n_counting, 2048)
+    indices = jnp.arange(limit, dtype=jnp.int32)
+    basis_indices = (indices << n_work) | 1
+    amps = state[basis_indices]
+    return jnp.angle(amps)
 
 
 def run_shor_circuit(a: int, N: int, n_counting: int, n_work: int,
@@ -369,20 +395,14 @@ def run_shor_circuit(a: int, N: int, n_counting: int, n_work: int,
 
     # Marginalise over work register → counting-register probabilities
     if verbose: print(f"\n  Computing measurement probabilities ...", flush=True)
-    probs_full = jnp.abs(state) ** 2
-    counting_dim = 1 << n_counting
-    work_dim     = 1 << n_work
-    probs_2d     = probs_full.reshape(counting_dim, work_dim)
-    probs        = probs_2d.sum(axis=1)
+    probs = marginalise_probs_jit(state, n_counting, n_work)
     probs.block_until_ready()
 
     # Also collect the phase of each counting amplitude
-    # (marginalise by taking the work-|1⟩ slice: amplitude of state[counting<<n_work | 1])
-    counting_phases = []
-    for ci in range(min(counting_dim, 2048)):
-        basis_idx = (ci << n_work) | 1   # work register = |1⟩
-        amp = complex(state[basis_idx])
-        counting_phases.append(math.atan2(amp.imag, amp.real))
+    if verbose: print(f"  Extracting counting phases ...", flush=True)
+    phases_jax = extract_phases_jit(state, n_counting, n_work)
+    phases_jax.block_until_ready()
+    counting_phases = [float(p) for p in phases_jax]
 
     return (np.array(probs), state, timing,
             phase_snapshots, a_pow_sequence, counting_phases)
