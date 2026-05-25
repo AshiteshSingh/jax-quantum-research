@@ -39,7 +39,9 @@ import os, sys, time, math, json, csv, warnings
 from datetime import datetime
 from math import gcd
 
-os.environ["XLA_PYTHON_CLIENT_PREALLOCATE"] = "false"
+# UPDATED: Force XLA to preallocate memory to prevent runtime fragmentation
+os.environ["XLA_PYTHON_CLIENT_PREALLOCATE"] = "true"
+os.environ["XLA_PYTHON_CLIENT_MEM_FRACTION"] = "0.95"
 
 import numpy as np
 
@@ -173,7 +175,7 @@ from functools import partial
 from jax.experimental.shard_map import shard_map
 from jax.sharding import Mesh, PartitionSpec
 
-# Flat 1-D state-vector gate primitives  (JAX JIT, shard-aware)
+# Flat 1-D state-vector gate primitives  (JAX JIT, shard-aware, chunked)
 # ─────────────────────────────────────────────────────────────────────────────
 
 H_MAT = jnp.array([[1, 1], [1, -1]], dtype=jnp.complex64) / jnp.sqrt(2.0)
@@ -182,51 +184,47 @@ H_MAT = jnp.array([[1, 1], [1, -1]], dtype=jnp.complex64) / jnp.sqrt(2.0)
 TPU_MESH = Mesh(np.array(DEVICES), ('dev',))
 P_SPEC = PartitionSpec('dev', None)
 
-@partial(jax.jit, static_argnums=(1, 2))
+@partial(jax.jit, static_argnums=(1, 2), donate_argnums=(0,))
 def _hadamard_single(state, q, n_counting):
-    # 4 Global Qubits (0,1,2,3) route across the 16 TPU chips. 
-    # Qubits 4+ live safely inside the local 16GB HBM.
     if q >= 4:
-        # --- LOCAL QUBIT ---
         @jax.jit
         def local_h(local_s):
             dim_w = local_s.shape[1]
             q_loc = q - 4
             shape1 = 1 << q_loc
             shape2 = 1 << (n_counting - 4 - 1 - q_loc)
-            
             s = local_s.reshape((shape1, 2, shape2, dim_w))
             s = jnp.tensordot(H_MAT, s, axes=([1], [1]))
             s = jnp.moveaxis(s, 0, 1)
             return s.reshape(local_s.shape)
-            
         return shard_map(local_h, TPU_MESH, in_specs=P_SPEC, out_specs=P_SPEC)(state)
         
     else:
-        # --- GLOBAL QUBIT (Cross-Chip Butterfly Exchange) ---
         @jax.jit
         def global_h(local_s):
             d = jax.lax.axis_index('dev')
             bit_pos = 3 - q
             bit_val = (d >> bit_pos) & 1
-            
-            # Pair up with partner TPU chip over the ICI
             perm = [(i, i ^ (1 << bit_pos)) for i in range(16)]
-            partner_s = jax.lax.ppermute(local_s, axis_name='dev', perm=perm)
-            
-            # Apply H = [1 1; 1 -1] / sqrt(2) directly using paired memory
-            new_s = jnp.where(bit_val == 0,
-                              local_s + partner_s,
-                              partner_s - local_s) / jnp.sqrt(2.0)
-            return new_s.astype(jnp.complex64)
 
+            # 32-chunk scan pipeline drops network memory spikes from 8GB to 128MB
+            def scan_fn(carry, slice_s):
+                p_slice = jax.lax.ppermute(slice_s, axis_name='dev', perm=perm)
+                n_slice = jnp.where(bit_val == 0,
+                                    slice_s + p_slice,
+                                    p_slice - slice_s) / jnp.sqrt(2.0)
+                return carry, n_slice.astype(jnp.complex64)
+
+            reshaped = local_s.reshape((32, -1))
+            _, out = jax.lax.scan(scan_fn, None, reshaped)
+            return out.reshape(local_s.shape)
         return shard_map(global_h, TPU_MESH, in_specs=P_SPEC, out_specs=P_SPEC)(state)
 
 def hadamard_flat(state, q, n_counting):
     return _hadamard_single(state, q, n_counting)
 
 
-@partial(jax.jit, static_argnums=(1, 2, 3))
+@partial(jax.jit, static_argnums=(1, 2, 3), donate_argnums=(0,))
 def _ctrl_phase_single(state, ctrl, tgt, n_counting, cos_t, sin_t):
     dim_c = 1 << n_counting
     idx_c = jnp.arange(dim_c, dtype=jnp.int32)
@@ -247,7 +245,7 @@ def ctrl_phase_flat(state, ctrl, tgt, n_counting, theta):
     return _ctrl_phase_single(state, ctrl, tgt, n_counting, cos_t, sin_t)
 
 
-@partial(jax.jit, static_argnums=(1, 2, 3))
+@partial(jax.jit, static_argnums=(1, 2, 3), donate_argnums=(0,))
 def _swap_single(state, q1, q2, n_counting):
     if q1 == q2:
         return state
@@ -262,7 +260,6 @@ def _swap_single(state, q1, q2, n_counting):
         shape1 = 1 << qm
         shape2 = 1 << (qM - qm - 1)
         shape3 = 1 << (n_counting - 4 - 1 - qM)
-        
         s = local_s.reshape((shape1, 2, shape2, 2, shape3, dim_w))
         s = jnp.swapaxes(s, 1, 3)
         return s.reshape(local_s.shape)
@@ -272,37 +269,46 @@ def _swap_single(state, q1, q2, n_counting):
         d = jax.lax.axis_index('dev')
         bit1 = (d >> (3 - q_min)) & 1
         bit2 = (d >> (3 - q_max)) & 1
-        
         partner = (1 << (3 - q_min)) ^ (1 << (3 - q_max))
         perm = [(i, i ^ partner) for i in range(16)]
-        
-        partner_s = jax.lax.ppermute(local_s, axis_name='dev', perm=perm)
-        return jnp.where(bit1 != bit2, partner_s, local_s)
+
+        def scan_fn(carry, slice_s):
+            p_slice = jax.lax.ppermute(slice_s, axis_name='dev', perm=perm)
+            n_slice = jnp.where(bit1 != bit2, p_slice, slice_s)
+            return carry, n_slice
+
+        reshaped = local_s.reshape((32, -1))
+        _, out = jax.lax.scan(scan_fn, None, reshaped)
+        return out.reshape(local_s.shape)
 
     @jax.jit
     def cross_swap(local_s):
-        # Swaps a chip-level network routing bit with a local memory bit
         d = jax.lax.axis_index('dev')
         bit_g = (d >> (3 - q_min)) & 1
-        
         perm = [(i, i ^ (1 << (3 - q_min))) for i in range(16)]
-        partner_s = jax.lax.ppermute(local_s, axis_name='dev', perm=perm)
-        
+
         q_loc = q_max - 4
         dim_w = local_s.shape[1]
         shape1 = 1 << q_loc
         shape2 = 1 << (n_counting - 4 - 1 - q_loc)
         
-        s = local_s.reshape((shape1, 2, shape2, dim_w))
-        partner_s = partner_s.reshape((shape1, 2, shape2, dim_w))
-        
-        # Mask and swap the halves of the local array dynamically
-        local_bit_idx = jnp.array([0, 1]).reshape((1, 2, 1, 1))
-        keep_mask = (local_bit_idx == bit_g)
-        partner_slice = jnp.take(partner_s, bit_g, axis=1, keepdims=True)
-        
-        new_s = jnp.where(keep_mask, s, partner_slice)
-        return new_s.reshape(local_s.shape)
+        # Isolate the target axis and chunk into 32 network streams
+        s = local_s.reshape((shape1, 2, shape2 * dim_w))
+        s = jnp.moveaxis(s, 1, -1) 
+        s = s.reshape((32, -1, 2))
+
+        def scan_fn(carry, slice_s):
+            p_slice = jax.lax.ppermute(slice_s, axis_name='dev', perm=perm)
+            local_bit_idx = jnp.array([0, 1]).reshape((1, 2))
+            keep_mask = (local_bit_idx == bit_g)
+            partner_slice = jnp.take(p_slice, bit_g, axis=1, keepdims=True)
+            n_slice = jnp.where(keep_mask, slice_s, partner_slice)
+            return carry, n_slice
+
+        _, out = jax.lax.scan(scan_fn, None, s)
+        out = out.reshape((shape1, shape2 * dim_w, 2))
+        out = jnp.moveaxis(out, -1, 1) 
+        return out.reshape(local_s.shape)
 
     if q_min >= 4:
         return shard_map(local_swap, TPU_MESH, in_specs=P_SPEC, out_specs=P_SPEC)(state)
@@ -331,7 +337,7 @@ def inverse_qft_flat(state, qubits, n_counting):
 # Controlled Modular Multiplication
 # ─────────────────────────────────────────────────────────────────────────────
 
-@partial(jax.jit, static_argnums=(1, 3, 4))
+@partial(jax.jit, static_argnums=(1, 3, 4), donate_argnums=(0,))
 def _ctrl_mod_mul_jit(state, ctrl_qubit, perm_inv_jax, N, n_counting):
     dim_c = 1 << n_counting
     idx_c = jnp.arange(dim_c, dtype=jnp.int32)
