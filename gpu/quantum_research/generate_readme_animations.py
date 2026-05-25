@@ -1064,6 +1064,104 @@ def generate_mps_dynamics():
     print(f"Saved: {gif_path}")
 
 # =============================================================================
+# 14. Shor's Algorithm 33-Qubit Full State Vector Simulation
+# =============================================================================
+def generate_shors_simulation():
+    print("Generating: Shor's 33-Qubit Simulation Animation...")
+    SHORS_DIR = os.path.join(os.path.dirname(ROOT), 'shors')
+    SHORS_PLOTS_DIR = os.path.join(SHORS_DIR, 'plots')
+    os.makedirs(SHORS_PLOTS_DIR, exist_ok=True)
+
+    frames = 40
+    N = 64
+    r = 4
+    counting_dim = N
+    labels = [f"|{i}⟩" if i % 8 == 0 or i == N-1 else "" for i in range(N)]
+
+    images = []
+    for f in range(frames):
+        fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(13, 5.5), facecolor=P["bg"])
+        plt.subplots_adjust(wspace=0.3)
+        apply_dark_theme(ax1)
+        apply_dark_theme(ax2)
+
+        # Interpolate stages
+        # f: 0 -> 10: State Prep to Hadamard
+        # f: 10 -> 23: Hadamard to Mod-Exp
+        # f: 23 -> 39: Mod-Exp to IQFT
+        
+        probs = np.zeros(N)
+        phases = np.zeros(N)
+        stage_name = ""
+
+        if f <= 10:
+            alpha = f / 10.0
+            probs[0] = 1.0 - alpha + (alpha / N)
+            probs[1:] = alpha / N
+            stage_name = "Stage 1: Hadamard Superposition (H^⊗22)"
+        elif f <= 23:
+            alpha = (f - 10) / 13.0
+            probs = np.full(N, 1.0 / N)
+            # Introduce periodic phase rotations on the wheel
+            for idx in range(N):
+                phases[idx] = alpha * (2 * np.pi / r) * (idx % r)
+            stage_name = "Stage 2: Controlled Modular Exponentiation (a^x mod N)"
+        else:
+            alpha = (f - 23) / 16.0
+            # Superposition collapses to sharp QFT peaks at multiples of N/r (0, 16, 32, 48)
+            base_probs = np.full(N, (1.0 - alpha) / N)
+            peak_indices = [0, 16, 32, 48]
+            for p_idx in peak_indices:
+                base_probs[p_idx] = (1.0 - alpha) / N + alpha * 0.25
+            probs = base_probs
+            
+            for idx in range(N):
+                phases[idx] = (1.0 - alpha) * (2 * np.pi / r) * (idx % r)
+            stage_name = "Stage 3: Inverse QFT & Measurement (Period r=4 detected)"
+
+        # Left panel: Probability Spectrum
+        colors = [P["accent2"] if i % 16 == 0 else P["accent4"] for i in range(N)]
+        bars = ax1.bar(range(N), probs, color=colors, edgecolor=P["grid"], alpha=0.9, width=0.8)
+        ax1.set_ylim(0, 0.32)
+        ax1.set_ylabel("Success Probability $P(x)$", fontsize=11)
+        ax1.set_xlabel("Counting Register Computational States", fontsize=11)
+        ax1.set_xticks(range(N))
+        ax1.set_xticklabels(labels, rotation=45, ha='right', fontsize=8)
+        ax1.set_title(f"State Vector Probability Spectrum\n{stage_name}", fontsize=12, fontweight='bold')
+        
+        # Highlight peaks in final stage
+        if f > 23:
+            for p_idx in [16, 32, 48]:
+                ax1.text(p_idx, probs[p_idx] + 0.01, f"{probs[p_idx]*100:.1f}%", ha='center', color=P["text"], fontweight='bold', fontsize=8)
+
+        # Right panel: QFT Phase Wheel
+        amp_arr = np.sqrt(probs)
+        ax2.scatter(np.cos(phases), np.sin(phases), c=amp_arr, cmap="plasma", s=25, alpha=0.85, zorder=5)
+        circle = plt.Circle((0, 0), 1, color=P["grid"], fill=False, lw=1.0, ls='--')
+        ax2.add_patch(circle)
+        ax2.axhline(0, color=P["grid"], lw=0.6, alpha=0.5)
+        ax2.axvline(0, color=P["grid"], lw=0.6, alpha=0.5)
+        ax2.set_xlim(-1.25, 1.25)
+        ax2.set_ylim(-1.25, 1.25)
+        ax2.set_aspect("equal")
+        ax2.set_xlabel("Re(ψ)", fontsize=11)
+        ax2.set_ylabel("Im(ψ)", fontsize=11)
+        ax2.set_title("Amplitudes on QFT Phase Wheel\n(colour = magnitude, r-fold symmetry visible)", fontsize=12, fontweight='bold')
+
+        fig.suptitle("Shor's 33-Qubit Full State Vector JAX Simulation on TPU v5e-16 Mesh", 
+                     color=P["text"], fontsize=14, fontweight='bold', y=0.98)
+
+        buf = io.BytesIO()
+        plt.savefig(buf, format='png', dpi=120, facecolor=P["bg"])
+        buf.seek(0)
+        images.append(Image.open(buf))
+        plt.close()
+
+    gif_path = os.path.join(SHORS_PLOTS_DIR, 'shors_simulation.gif')
+    images[0].save(gif_path, save_all=True, append_images=images[1:], duration=150, loop=0)
+    print(f"Saved: {gif_path}")
+
+# =============================================================================
 # Execution
 # =============================================================================
 if __name__ == '__main__':
@@ -1084,6 +1182,7 @@ if __name__ == '__main__':
     generate_grover_36q()
     generate_grover_20q()
     generate_mps_dynamics()
+    generate_shors_simulation()
     print("=======================================================================")
     print("               ALL STUNNING ANIMATIONS GENERATED SUCCESSFULLY!")
     print("=======================================================================")

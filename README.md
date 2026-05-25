@@ -632,10 +632,29 @@ These plots represent high-fidelity and noise-resilient large-scale simulations 
   <img src="tpu/plots/tpu_scaling_benchmark.gif" width="750" alt="TPU Benchmark">
 </div>
 
-#### 9. Shor's Algorithm 33-Qubit Full State Vector Simulation (Measurement Spectrum)
-This plot represents the high-resolution probability spectrum of the 22 counting qubits after executing Shor's order finding circuit. The distinct expectation spikes correspond directly to modular fractional divisions $s/2^{22} \approx j/r$. Continued fraction expansion converts these peaks into the correct candidates for period $r$, successfully factoring $N=15, 21, 35$ with absolute physical fidelity:
+#### 9. Shor's Algorithm 33-Qubit Full State Vector Simulation & QFT Analysis
+
+Our distributed JAX Shor simulation generates high-fidelity quantum execution states, from superposition to period extraction:
+
+##### A. State Vector Amplitude & Phase Evolution (Stunning Animation)
+The animation below tracks the success probability distribution (left) and the corresponding amplitude phases plotted on the QFT Phase Wheel (right) across the simulation stages:
+* **Stage 1 (Hadamard Superposition)**: Spreads the state vector uniformly across the $2^{22}$ computational basis states, maintaining uniform zero phase.
+* **Stage 2 (Controlled Modular Exponentiation)**: Establishes a highly structured, periodic modular phase relation ($2\pi/r$) entangled with the work register.
+* **Stage 3 (Inverse QFT & Measurement)**: Projects and focuses the distributed phases, collapsing the uniform state into extremely sharp success probability peaks at integer divisions $s \cdot 2^{22}/r$, exhibiting a beautiful $r$-fold circular symmetry on the phase wheel.
+
 <div align="center">
-  <img src="shors/plots/shors_spectrum_15_20260525_102314.png" width="750" alt="Shor's Algorithm 33-Qubit TPU Simulation Spectrum">
+  <img src="shors/plots/shors_simulation.gif" width="750" alt="Shor's Algorithm State Vector & Phase Wheel Animation">
+</div>
+
+##### B. High-Resolution Measurement Spectrum (Single Run)
+For a single factorization target (e.g. $N=15$, $a=7$), the high-resolution spectrum plot captures:
+* **Full Probability Spectrum**: Displays the entire measurement landscape with extremely narrow peaks at modular intervals.
+* **Log-Scale Spectrum**: Reveals the side-lobe structures and validates the high numerical precision of our pure JAX simulator.
+* **QFT Peak Zoom**: Magnifies the primary target phase peak at index $s = 2^{22}/r = 1,048,576$.
+* **Peak Heights Comparison**: Compares the simulated peak probability with the theoretical ideal limit ($1/r = 0.250$), confirming exact convergence.
+
+<div align="center">
+  <img src="shors/plots/shors_spectrum_15_20260525_102314.png" width="750" alt="Shor's Algorithm High-Resolution Measurement Spectrum">
 </div>
 
 ---
