@@ -301,7 +301,8 @@ def _swap_single(state, q1, q2, n_counting):
             p_slice = jax.lax.ppermute(slice_s, axis_name='dev', perm=perm)
             local_bit_idx = jnp.array([0, 1]).reshape((1, 2))
             keep_mask = (local_bit_idx == bit_g)
-            partner_slice = jnp.take(p_slice, bit_g, axis=1, keepdims=True)
+            partner_slice = jnp.take(p_slice, bit_g, axis=1)
+            partner_slice = jnp.expand_dims(partner_slice, axis=1)
             n_slice = jnp.where(keep_mask, slice_s, partner_slice)
             return carry, n_slice
 
