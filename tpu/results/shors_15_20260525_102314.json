@@ -1,0 +1,204 @@
+{
+  "N": 15,
+  "a": 7,
+  "n_counting": 22,
+  "n_work": 11,
+  "n_qubits_total": 33,
+  "r_classical": 4,
+  "factor_p": 5,
+  "factor_q": 3,
+  "success": true,
+  "timing": {
+    "init_s": 0.09486802799983707,
+    "hadamard_s": 159.7201880349994,
+    "mod_exp_s": 12.744699374000447,
+    "iqft_s": 89.93057509399932,
+    "total_s": 263.4258384629993
+  },
+  "top_measurements": [
+    {
+      "measurement": 0,
+      "prob": 0.2498932033777237,
+      "r_candidate": null
+    },
+    {
+      "measurement": 1,
+      "prob": 0.2008802592754364,
+      "r_candidate": 4194304
+    },
+    {
+      "measurement": 4194303,
+      "prob": 0.19987307488918304,
+      "r_candidate": 4194304
+    },
+    {
+      "measurement": 2,
+      "prob": 0.10081660002470016,
+      "r_candidate": 2097152
+    },
+    {
+      "measurement": 4194302,
+      "prob": 0.10003483295440674,
+      "r_candidate": 2097152
+    },
+    {
+      "measurement": 3,
+      "prob": 0.022320831194519997,
+      "r_candidate": null
+    },
+    {
+      "measurement": 4194301,
+      "prob": 0.022316116839647293,
+      "r_candidate": null
+    },
+    {
+      "measurement": 4194298,
+      "prob": 0.011289238929748535,
+      "r_candidate": null
+    },
+    {
+      "measurement": 6,
+      "prob": 0.011182358488440514,
+      "r_candidate": null
+    },
+    {
+      "measurement": 5,
+      "prob": 0.008112328127026558,
+      "r_candidate": 838860
+    },
+    {
+      "measurement": 4194299,
+      "prob": 0.008077578619122505,
+      "r_candidate": 838860
+    },
+    {
+      "measurement": 7,
+      "prob": 0.004108465276658535,
+      "r_candidate": null
+    },
+    {
+      "measurement": 10,
+      "prob": 0.004106111824512482,
+      "r_candidate": null
+    },
+    {
+      "measurement": 4194297,
+      "prob": 0.00409947894513607,
+      "r_candidate": null
+    },
+    {
+      "measurement": 4194294,
+      "prob": 0.004057846497744322,
+      "r_candidate": null
+    },
+    {
+      "measurement": 4194295,
+      "prob": 0.002501248847693205,
+      "r_candidate": null
+    },
+    {
+      "measurement": 9,
+      "prob": 0.00249385554343462,
+      "r_candidate": null
+    },
+    {
+      "measurement": 14,
+      "prob": 0.0020662678871303797,
+      "r_candidate": null
+    },
+    {
+      "measurement": 4194290,
+      "prob": 0.0020635786931961775,
+      "r_candidate": null
+    },
+    {
+      "measurement": 4194293,
+      "prob": 0.0016823690384626389,
+      "r_candidate": 381300
+    },
+    {
+      "measurement": 11,
+      "prob": 0.0016748220659792423,
+      "r_candidate": 381300
+    },
+    {
+      "measurement": 4194286,
+      "prob": 0.0012430221540853381,
+      "r_candidate": 233016
+    },
+    {
+      "measurement": 18,
+      "prob": 0.0012421307619661093,
+      "r_candidate": 233016
+    },
+    {
+      "measurement": 13,
+      "prob": 0.0011925233993679285,
+      "r_candidate": null
+    },
+    {
+      "measurement": 4194291,
+      "prob": 0.0011862115934491158,
+      "r_candidate": null
+    },
+    {
+      "measurement": 4194289,
+      "prob": 0.0008984159212559462,
+      "r_candidate": 279620
+    },
+    {
+      "measurement": 15,
+      "prob": 0.0008697707671672106,
+      "r_candidate": 279620
+    },
+    {
+      "measurement": 4194282,
+      "prob": 0.0008479782263748348,
+      "r_candidate": null
+    },
+    {
+      "measurement": 22,
+      "prob": 0.00083455367712304,
+      "r_candidate": null
+    },
+    {
+      "measurement": 17,
+      "prob": 0.0006970607792027295,
+      "r_candidate": null
+    },
+    {
+      "measurement": 4194287,
+      "prob": 0.0006745707942172885,
+      "r_candidate": null
+    },
+    {
+      "measurement": 26,
+      "prob": 0.000605985929723829,
+      "r_candidate": null
+    }
+  ],
+  "a_pow_sequence": [
+    7,
+    4,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1
+  ]
+}

@@ -1,0 +1,55 @@
+
+══════════════════════════════════════════════════════════════════════════════
+ Shor's Algorithm — 33-Qubit Full State Vector  │  TPU v5litepod-16  │  20260525_093510 
+══════════════════════════════════════════════════════════════════════════════
+
+══════════════════════════════════════════════════════════════════════════════
+                        System Info — TPU v5litepod-16                        
+══════════════════════════════════════════════════════════════════════════════
+  Backend           : TPU
+  Devices           : 16 TPU chips
+    [ 0] TPU_0(process=0,(0,0,0,0))
+    [ 1] TPU_1(process=0,(1,0,0,0))
+    [ 2] TPU_4(process=0,(0,1,0,0))
+    [ 3] TPU_5(process=0,(1,1,0,0))
+    [ 4] TPU_2(process=1,(2,0,0,0))
+    [ 5] TPU_3(process=1,(3,0,0,0))
+    [ 6] TPU_6(process=1,(2,1,0,0))
+    [ 7] TPU_7(process=1,(3,1,0,0))
+    [ 8] TPU_8(process=2,(0,2,0,0))
+    [ 9] TPU_9(process=2,(1,2,0,0))
+    [10] TPU_12(process=2,(0,3,0,0))
+    [11] TPU_13(process=2,(1,3,0,0))
+    [12] TPU_10(process=3,(2,2,0,0))
+    [13] TPU_11(process=3,(3,2,0,0))
+    [14] TPU_14(process=3,(2,3,0,0))
+    [15] TPU_15(process=3,(3,3,0,0))
+
+  TPU type          : Google Cloud TPU v5litepod-16
+  HBM per chip      : 16 GB HBM2e
+  Total HBM         : 256 GB
+
+  Qubit config      : 22 counting + 11 work = 33 total
+  State vector size : 2^33 = 8,589,934,592 amplitudes
+  State vector mem  : 64.00 GB (complex64)
+  Per-chip mem      : 4.00 GB
+  Remaining HBM     : 192.0 GB headroom
+
+  ✅  Memory check passed — 64.0 GB fits within 256 GB HBM
+
+
+══════════════════════════════════════════════════════════════════════════════
+               Shor's Algorithm  —  N = 15,  a = 7,  33 Qubits                
+══════════════════════════════════════════════════════════════════════════════
+  Classical order of 7 mod 15 : r = 4
+
+  Circuit       : 22 counting + 11 work = 33 qubits total
+  State vector  : 2^33 = 8,589,934,592 amplitudes
+  Memory        : 64.00 GB  (sharded across 16 TPU chips)
+  Factoring     : N=15, a=7
+  Devices       : TPU, 16 chips
+
+  [1/4] Initialising |0⟩^22 ⊗ |1⟩_work ...
+      Done  (0.119s)
+
+  [2/4] H^⊗22 on counting register ...

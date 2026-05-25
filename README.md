@@ -411,6 +411,22 @@ Analyzes the expressibility vs. trainability bottleneck in Deep Parameterized Qu
 $$\text{Var}_{\vec{\theta}}\left[ \partial_{\theta_k} \langle H \rangle \right] \in \mathcal{O}\left( 2^{-n} \right)$$
 The simulator fits gradient variances to exponential decay curves to evaluate trainability thresholds across architectural depths.
 
+### 8. Shor's Algorithm (TPU-Accelerated Order Finding)
+Simulates Shor's quantum factoring algorithm at an extreme scale of **33 qubits** ($2^{33} \approx 8.59 \times 10^9$ state vector amplitude footprint). 
+* **Mathematical Formulation:** Factoring an integer $N$ is reduced to finding the period $r$ of the modular exponentiation function:
+  $$f(x) = a^x \pmod N$$
+  where $a$ is a chosen coprime base.
+* **Quantum Circuit Pipeline:**
+  1. **Initialization:** Prepares the $22$ counting qubits and $11$ work qubits in $|0\rangle^{\otimes 22} \otimes |1\rangle_w$.
+  2. **Superposition:** Applies Hadamard gates to prepare the counting register:
+     $$|\psi_0\rangle = \frac{1}{\sqrt{2^k}} \sum_{x=0}^{2^k-1} |x\rangle \otimes |1\rangle_w$$
+  3. **Modular Exponentiation:** Applies the controlled modular multiplication gate sequence:
+     $$|\psi_1\rangle = \frac{1}{\sqrt{2^k}} \sum_{x=0}^{2^k-1} |x\rangle \otimes |a^x \pmod N\rangle_w$$
+     This is sharded over physical device boundaries using JAX `shard_map` and high-speed inter-chip communications.
+  4. **Inverse QFT:** Executes the Inverse Quantum Fourier Transform on the counting register:
+     $$\text{IQFT}(|x\rangle) = \frac{1}{\sqrt{2^k}} \sum_{y=0}^{2^k-1} e^{-2\pi i x y / 2^k} |y\rangle$$
+  5. **Measurement & Period Extraction:** Marginalizes work qubits to measure the counting register, yielding phase peaks $s/2^k \approx j/r$. Continued fractions then extract the candidate period $r$, and the classical prime factors of $N$ are computed as $\gcd(a^{r/2} \pm 1, N)$.
+
 ---
 
 ## ☁️ Cloud TPU Engineering & Hardware-Level Optimizations
@@ -446,6 +462,9 @@ Standard Python `for` loops in JAX compile by fully unrolling the loop. For deep
 Training deep variational quantum circuits via backpropagation requires keeping the state vectors of every forward-pass layer in HBM memory to compute reverse-mode derivatives.
 * For large scales, this causes memory consumption to scale linearly with circuit depth, triggering OOM errors.
 * **Optimization:** We wrap the circuit evaluation steps in the `jax.checkpoint` (also known as `jax.remat`) decorator. This discards intermediate layer states during the forward pass. During the backward pass, JAX dynamically re-computes intermediate states on-the-fly, reducing memory complexity from $\mathcal{O}(\text{depth})$ to $\mathcal{O}(1)$ at the cost of minor re-computation cycles.
+
+### 4. Shard-Map with Chunked Communication (Swap & Hadamard Networks)
+For qubits requiring inter-chip communications (e.g. Swaps during QFT across device boundaries), we utilize `jax.experimental.shard_map` with chunked JAX `ppermute` and `lax.scan` to pipeline peer-to-peer data transfers, dropping networks spikes from 8 GB to 128 MB and avoiding global `all-gather` memory exhaustion.
 
 ---
 
@@ -599,6 +618,11 @@ These plots represent high-fidelity and noise-resilient large-scale simulations 
 #### 8. TPU 33-Qubit Scaling Benchmark (Multi-device Sharded Performance)
 <div align="center">
   <img src="tpu/plots/tpu_scaling_benchmark.gif" width="750" alt="TPU Benchmark">
+</div>
+
+#### 9. Shor's Algorithm 33-Qubit Full State Vector Simulation (Measurement Spectrum)
+<div align="center">
+  <img src="tpu/plots/shors_spectrum_15_20260525_102314.png" width="750" alt="Shor's Algorithm 33-Qubit TPU Simulation Spectrum">
 </div>
 
 ---

@@ -1,0 +1,204 @@
+{
+  "N": 21,
+  "a": 2,
+  "n_counting": 22,
+  "n_work": 11,
+  "n_qubits_total": 33,
+  "r_classical": 6,
+  "factor_p": 3,
+  "factor_q": 7,
+  "success": true,
+  "timing": {
+    "init_s": 0.03794361000018398,
+    "hadamard_s": 3.4679465620001793,
+    "mod_exp_s": 11.424757089000195,
+    "iqft_s": 19.308745776999785,
+    "total_s": 34.30248541799938
+  },
+  "top_measurements": [
+    {
+      "measurement": 0,
+      "prob": 0.1665954291820526,
+      "r_candidate": null
+    },
+    {
+      "measurement": 2796203,
+      "prob": 0.1508045196533203,
+      "r_candidate": null
+    },
+    {
+      "measurement": 1398101,
+      "prob": 0.1504497230052948,
+      "r_candidate": null
+    },
+    {
+      "measurement": 1398102,
+      "prob": 0.11341592669487,
+      "r_candidate": null
+    },
+    {
+      "measurement": 2796202,
+      "prob": 0.11333352327346802,
+      "r_candidate": null
+    },
+    {
+      "measurement": 1,
+      "prob": 0.067848339676857,
+      "r_candidate": null
+    },
+    {
+      "measurement": 4194303,
+      "prob": 0.0675165057182312,
+      "r_candidate": null
+    },
+    {
+      "measurement": 2796204,
+      "prob": 0.028378453105688095,
+      "r_candidate": null
+    },
+    {
+      "measurement": 1398100,
+      "prob": 0.028357118368148804,
+      "r_candidate": null
+    },
+    {
+      "measurement": 3,
+      "prob": 0.007481262553483248,
+      "r_candidate": null
+    },
+    {
+      "measurement": 4194301,
+      "prob": 0.007426793687045574,
+      "r_candidate": null
+    },
+    {
+      "measurement": 1398104,
+      "prob": 0.0070884944871068,
+      "r_candidate": null
+    },
+    {
+      "measurement": 2796200,
+      "prob": 0.007083343341946602,
+      "r_candidate": null
+    },
+    {
+      "measurement": 1398103,
+      "prob": 0.006125480402261019,
+      "r_candidate": null
+    },
+    {
+      "measurement": 2796201,
+      "prob": 0.006055566482245922,
+      "r_candidate": null
+    },
+    {
+      "measurement": 1398098,
+      "prob": 0.004554105922579765,
+      "r_candidate": null
+    },
+    {
+      "measurement": 2796206,
+      "prob": 0.00453602522611618,
+      "r_candidate": null
+    },
+    {
+      "measurement": 2796205,
+      "prob": 0.0030454397201538086,
+      "r_candidate": null
+    },
+    {
+      "measurement": 1398099,
+      "prob": 0.0030312002636492252,
+      "r_candidate": null
+    },
+    {
+      "measurement": 5,
+      "prob": 0.002682850230485201,
+      "r_candidate": 838860
+    },
+    {
+      "measurement": 4194299,
+      "prob": 0.0026700925081968307,
+      "r_candidate": 838860
+    },
+    {
+      "measurement": 1398106,
+      "prob": 0.002338315360248089,
+      "r_candidate": null
+    },
+    {
+      "measurement": 2796198,
+      "prob": 0.0022978181950747967,
+      "r_candidate": null
+    },
+    {
+      "measurement": 1398096,
+      "prob": 0.0017774631269276142,
+      "r_candidate": null
+    },
+    {
+      "measurement": 2796208,
+      "prob": 0.0017721487674862146,
+      "r_candidate": null
+    },
+    {
+      "measurement": 4194297,
+      "prob": 0.0013964043464511633,
+      "r_candidate": null
+    },
+    {
+      "measurement": 7,
+      "prob": 0.0013800032902508974,
+      "r_candidate": null
+    },
+    {
+      "measurement": 1398105,
+      "prob": 0.0012923197355121374,
+      "r_candidate": null
+    },
+    {
+      "measurement": 2796199,
+      "prob": 0.0012663740199059248,
+      "r_candidate": null
+    },
+    {
+      "measurement": 2796196,
+      "prob": 0.001140462700277567,
+      "r_candidate": null
+    },
+    {
+      "measurement": 1398108,
+      "prob": 0.0011334170121699572,
+      "r_candidate": null
+    },
+    {
+      "measurement": 1398094,
+      "prob": 0.000950253801420331,
+      "r_candidate": null
+    }
+  ],
+  "a_pow_sequence": [
+    2,
+    4,
+    16,
+    4,
+    16,
+    4,
+    16,
+    4,
+    16,
+    4,
+    16,
+    4,
+    16,
+    4,
+    16,
+    4,
+    16,
+    4,
+    16,
+    4,
+    16,
+    4
+  ]
+}

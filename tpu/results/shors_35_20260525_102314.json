@@ -1,0 +1,204 @@
+{
+  "N": 35,
+  "a": 2,
+  "n_counting": 22,
+  "n_work": 11,
+  "n_qubits_total": 33,
+  "r_classical": 12,
+  "factor_p": 5,
+  "factor_q": 7,
+  "success": true,
+  "timing": {
+    "init_s": 0.041669989000183705,
+    "hadamard_s": 3.4667947940006343,
+    "mod_exp_s": 11.870918659999916,
+    "iqft_s": 19.30370086699986,
+    "total_s": 34.74640539899974
+  },
+  "top_measurements": [
+    {
+      "measurement": 0,
+      "prob": 0.08237986266613007,
+      "r_candidate": null
+    },
+    {
+      "measurement": 2796203,
+      "prob": 0.08108249306678772,
+      "r_candidate": null
+    },
+    {
+      "measurement": 1398101,
+      "prob": 0.08089542388916016,
+      "r_candidate": null
+    },
+    {
+      "measurement": 1398102,
+      "prob": 0.07554347813129425,
+      "r_candidate": null
+    },
+    {
+      "measurement": 2796202,
+      "prob": 0.07540012151002884,
+      "r_candidate": null
+    },
+    {
+      "measurement": 4194303,
+      "prob": 0.06738177686929703,
+      "r_candidate": null
+    },
+    {
+      "measurement": 1,
+      "prob": 0.06697598099708557,
+      "r_candidate": null
+    },
+    {
+      "measurement": 2796204,
+      "prob": 0.05675689876079559,
+      "r_candidate": null
+    },
+    {
+      "measurement": 1398100,
+      "prob": 0.05671423673629761,
+      "r_candidate": null
+    },
+    {
+      "measurement": 2796201,
+      "prob": 0.045390818268060684,
+      "r_candidate": null
+    },
+    {
+      "measurement": 1398103,
+      "prob": 0.04528145119547844,
+      "r_candidate": null
+    },
+    {
+      "measurement": 2,
+      "prob": 0.033916372805833817,
+      "r_candidate": null
+    },
+    {
+      "measurement": 4194302,
+      "prob": 0.03348948061466217,
+      "r_candidate": null
+    },
+    {
+      "measurement": 2796205,
+      "prob": 0.023266572505235672,
+      "r_candidate": null
+    },
+    {
+      "measurement": 1398099,
+      "prob": 0.02305356040596962,
+      "r_candidate": null
+    },
+    {
+      "measurement": 1398104,
+      "prob": 0.0141769889742136,
+      "r_candidate": null
+    },
+    {
+      "measurement": 2796200,
+      "prob": 0.014166686683893204,
+      "r_candidate": null
+    },
+    {
+      "measurement": 3,
+      "prob": 0.007465737871825695,
+      "r_candidate": null
+    },
+    {
+      "measurement": 4194301,
+      "prob": 0.007455143146216869,
+      "r_candidate": null
+    },
+    {
+      "measurement": 1398107,
+      "prob": 0.0039006415754556656,
+      "r_candidate": null
+    },
+    {
+      "measurement": 2796197,
+      "prob": 0.0038899737410247326,
+      "r_candidate": null
+    },
+    {
+      "measurement": 6,
+      "prob": 0.003744316753000021,
+      "r_candidate": null
+    },
+    {
+      "measurement": 4194298,
+      "prob": 0.0037104524672031403,
+      "r_candidate": null
+    },
+    {
+      "measurement": 1398096,
+      "prob": 0.0035549260210245848,
+      "r_candidate": null
+    },
+    {
+      "measurement": 2796208,
+      "prob": 0.0035442973021417856,
+      "r_candidate": null
+    },
+    {
+      "measurement": 1398095,
+      "prob": 0.003113576676696539,
+      "r_candidate": null
+    },
+    {
+      "measurement": 2796209,
+      "prob": 0.003093564882874489,
+      "r_candidate": null
+    },
+    {
+      "measurement": 2796206,
+      "prob": 0.0030313790775835514,
+      "r_candidate": null
+    },
+    {
+      "measurement": 1398098,
+      "prob": 0.003017039503902197,
+      "r_candidate": null
+    },
+    {
+      "measurement": 4194299,
+      "prob": 0.002712792716920376,
+      "r_candidate": 838860
+    },
+    {
+      "measurement": 5,
+      "prob": 0.002668672241270542,
+      "r_candidate": 838860
+    },
+    {
+      "measurement": 2796196,
+      "prob": 0.002280925400555134,
+      "r_candidate": null
+    }
+  ],
+  "a_pow_sequence": [
+    2,
+    4,
+    16,
+    11,
+    16,
+    11,
+    16,
+    11,
+    16,
+    11,
+    16,
+    11,
+    16,
+    11,
+    16,
+    11,
+    16,
+    11,
+    16,
+    11,
+    16,
+    11
+  ]
+}
