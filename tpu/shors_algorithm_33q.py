@@ -167,10 +167,12 @@ def try_factor(a: int, r: int, N: int):
     return None
 
 # ─────────────────────────────────────────────────────────────────────────────
+from functools import partial
+
 # Flat 1-D state-vector gate primitives  (JAX JIT, shard-aware)
 # ─────────────────────────────────────────────────────────────────────────────
 
-@jax.jit
+@partial(jax.jit, static_argnums=(1, 2))
 def _hadamard_single(state, q, n):
     dim    = 1 << n
     stride = 1 << (n - 1 - q)
@@ -190,7 +192,7 @@ def _hadamard_single(state, q, n):
 def hadamard_flat(state, q, n):
     return _hadamard_single(state, q, n)
 
-@jax.jit
+@partial(jax.jit, static_argnums=(1, 2, 3))
 def _ctrl_phase_single(state, ctrl, tgt, n, cos_t, sin_t):
     dim   = 1 << n
     idx   = jnp.arange(dim, dtype=jnp.int32)
@@ -209,7 +211,7 @@ def ctrl_phase_flat(state, ctrl, tgt, n, theta):
     sin_t = jnp.float32(float(np.sin(theta)))
     return _ctrl_phase_single(state, ctrl, tgt, n, cos_t, sin_t)
 
-@jax.jit
+@partial(jax.jit, static_argnums=(1, 2, 3))
 def _swap_single(state, q1, q2, n):
     dim     = 1 << n
     idx     = jnp.arange(dim, dtype=jnp.int32)
@@ -234,8 +236,6 @@ def inverse_qft_flat(state, qubits, n):
             state = ctrl_phase_flat(state, qubits[j], q, n, theta)
         state = hadamard_flat(state, q, n)
     return state
-
-from functools import partial
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Controlled Modular Multiplication
