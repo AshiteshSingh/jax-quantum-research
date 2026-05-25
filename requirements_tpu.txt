@@ -1,0 +1,33 @@
+# ─────────────────────────────────────────────────────────────────────────────
+#  requirements_tpu.txt
+#  TPU-specific Python dependencies for the JAX Quantum Research Suite
+#  on Google Cloud TPU v5e-16 (tpu-v5e-16 topology, 16 chips)
+#
+#  Install on each TPU VM worker:
+#    pip install -r requirements_tpu.txt
+#
+#  Or inside the launcher:
+#    gcloud compute tpus tpu-vm ssh $TPU_NAME \
+#        --zone=$ZONE --worker=all \
+#        --command="pip install -r ~/jax-quantum-research/requirements_tpu.txt"
+# ─────────────────────────────────────────────────────────────────────────────
+
+# ── JAX with TPU support ─────────────────────────────────────────────────────
+# The [tpu] extra installs libtpu (the TPU runtime) automatically.
+# Pin to a version compatible with v5e hardware.
+jax[tpu]>=0.5.0
+
+# ── Numerics ─────────────────────────────────────────────────────────────────
+numpy>=2.0.0
+
+# ── Visualisation ────────────────────────────────────────────────────────────
+matplotlib>=3.10.0
+
+# ── Optional: number theory helpers (continued fractions, GCD) ───────────────
+# sympy is NOT required — all number theory is implemented from scratch in
+# shors_algorithm_33q.py using only Python stdlib (math.gcd, fractions).
+# Uncomment if you want a heavier symbolic-math environment:
+# sympy>=1.12
+
+# ── Testing ──────────────────────────────────────────────────────────────────
+pytest>=9.0.0

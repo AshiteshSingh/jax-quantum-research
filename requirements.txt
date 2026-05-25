@@ -5,6 +5,10 @@
 # GPU/CUDA install (WSL2 + NVIDIA GPU — RECOMMENDED):
 #   pip install "jax[cuda12]" -f https://storage.googleapis.com/jax-releases/jax_cuda_releases.html
 #   pip install matplotlib pytest
+#
+# TPU install (Google Cloud TPU v5e-16):
+#   pip install -r requirements_tpu.txt
+#   (see requirements_tpu.txt for jax[tpu] with libtpu)
 # ─────────────────────────────────────────────────────────────────────────────
 
 # Core
@@ -17,6 +21,9 @@ scipy>=1.14.0
 
 # Visualization
 matplotlib>=3.10.0
+
+# Number theory (optional — used by Shor's algorithm; stdlib gcd/fractions also works)
+# sympy>=1.12
 
 # Testing
 pytest>=9.0.0
