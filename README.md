@@ -632,11 +632,13 @@ These plots represent high-fidelity and noise-resilient large-scale simulations 
   <img src="tpu/plots/tpu_scaling_benchmark.gif" width="750" alt="TPU Benchmark">
 </div>
 
-#### 9. Shor's Algorithm 33-Qubit Full State Vector Simulation & QFT Analysis
+---
+
+### ☁️ Shor's Algorithm Simulation Results (Cloud TPU v5e-16)
 
 Our distributed JAX Shor simulation generates high-fidelity quantum execution states, from superposition to period extraction:
 
-##### A. State Vector Amplitude & Phase Evolution (Stunning Animation)
+#### 1. State Vector Amplitude & Phase Evolution (Stunning Animation)
 The animation below tracks the success probability distribution (left) and the corresponding amplitude phases plotted on the QFT Phase Wheel (right) across the simulation stages:
 * **Stage 1 (Hadamard Superposition)**: Spreads the state vector uniformly across the $2^{22}$ computational basis states, maintaining uniform zero phase.
 * **Stage 2 (Controlled Modular Exponentiation)**: Establishes a highly structured, periodic modular phase relation ($2\pi/r$) entangled with the work register.
@@ -646,7 +648,7 @@ The animation below tracks the success probability distribution (left) and the c
   <img src="shors/plots/shors_simulation.gif" width="750" alt="Shor's Algorithm State Vector & Phase Wheel Animation">
 </div>
 
-##### B. High-Resolution Measurement Spectrum (Single Run)
+#### 2. High-Resolution Measurement Spectrum (Single Run)
 For a single factorization target (e.g. $N=15$, $a=7$), the high-resolution spectrum plot captures:
 * **Full Probability Spectrum**: Displays the entire measurement landscape with extremely narrow peaks at modular intervals.
 * **Log-Scale Spectrum**: Reveals the side-lobe structures and validates the high numerical precision of our pure JAX simulator.
