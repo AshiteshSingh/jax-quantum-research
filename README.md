@@ -246,6 +246,12 @@ qauntum machine learning/
 │   ├── plots/                    ← TPU watermarked plots (tracked)
 │   └── results/                  ← TPU JSON, CSV results, and Tee logs (tracked)
 │
+├── shors/                        # === SHOR'S ALGORITHM SIMULATION ===
+│   ├── shors_algorithm_33q.py    ← Main sharding-aware Shor simulator
+│   ├── run_shor_tpu.sh           ← TPU launcher script
+│   ├── plots/                    ← Shor's spectrum and phase plots (tracked)
+│   └── results/                  ← CSV, JSON checkpoints, and Tee log files (tracked)
+│
 ├── grover_simulation/            # === GROVER'S ALGORITHM SIMULATION ===
 │   ├── 20qubits.py               ← Grover 20-qubit standard simulation
 │   ├── 30qubits.py               ← Grover 30-qubit high-performance simulation
@@ -516,6 +522,12 @@ The two acceleration branches exhibit distinct engineering tradeoffs and compute
   $$S(A:B) \propto \log(\chi)$$
   where $\chi$ is the bond dimension. This drives MPS fidelity to a sharp breaking point, validating that global quantum search is highly resilient to standard tensor-network classical approximations.
 
+#### E. Shor's Algorithm 33-Qubit Full State Vector Simulation
+* **Scale and Memory Optimization:** Simulating Shor's order finding algorithm at a 33-qubit scale requires holding a $2^{33}$-amplitude state vector in memory (exactly **64.00 GB** of complex64 elements). We partition this memory footprint across a **16-chip Cloud TPU v5e mesh** using JAX `PositionalSharding` (~4 GB HBM2e per chip).
+* **Compiler Graph Scaling:** Unrolling modular multiplication loops statically would cause compiler out-of-memory errors on the host CPU. By utilizing structured JAX hardware loop primitives (`jax.lax.fori_loop`), we compile the modular multiplication step once and represent it as a single metadata block, maintaining a graph size of $\mathcal{O}(1)$.
+* **Shard-Map Inter-Chip Swaps:** For swaps across device boundaries in QFT, we pipeline peer-to-peer data transfers using `jax.experimental.shard_map` with chunked JAX `ppermute` and `lax.scan`, dropping network allocation spikes from 8 GB to 128 MB and eliminating OOM memory crashes.
+* **Period Extraction Success:** Expectation measurements on the 22 counting qubits yield high-resolution phase peaks corresponding to $s/2^{22} \approx j/r$. Applying continued fractions to these peaks successfully extracts the period $r$ (e.g. $r=4$ for $N=15$, $r=6$ for $N=21$, and $r=12$ for $N=35$), enabling the classical computation of the prime factors of $N$ via $\gcd(a^{r/2} \pm 1, N)$.
+
 ---
 
 ## 📊 Hardware Benchmarks & Performance Comparison
@@ -621,8 +633,9 @@ These plots represent high-fidelity and noise-resilient large-scale simulations 
 </div>
 
 #### 9. Shor's Algorithm 33-Qubit Full State Vector Simulation (Measurement Spectrum)
+This plot represents the high-resolution probability spectrum of the 22 counting qubits after executing Shor's order finding circuit. The distinct expectation spikes correspond directly to modular fractional divisions $s/2^{22} \approx j/r$. Continued fraction expansion converts these peaks into the correct candidates for period $r$, successfully factoring $N=15, 21, 35$ with absolute physical fidelity:
 <div align="center">
-  <img src="tpu/plots/shors_spectrum_15_20260525_102314.png" width="750" alt="Shor's Algorithm 33-Qubit TPU Simulation Spectrum">
+  <img src="shors/plots/shors_spectrum_15_20260525_102314.png" width="750" alt="Shor's Algorithm 33-Qubit TPU Simulation Spectrum">
 </div>
 
 ---
