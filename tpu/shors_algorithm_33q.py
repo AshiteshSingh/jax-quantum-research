@@ -74,7 +74,7 @@ os.makedirs("tpu/plots",   exist_ok=True)
 BACKEND  = jax.default_backend()
 DEVICES  = jax.devices()
 NUM_DEV  = len(DEVICES)
-SHARDING = PositionalSharding(DEVICES).reshape(NUM_DEV)
+SHARDING = PositionalSharding(DEVICES).reshape(NUM_DEV, 1)
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Dark-theme palette (project-wide style)
@@ -175,149 +175,134 @@ from functools import partial
 # ─────────────────────────────────────────────────────────────────────────────
 
 @partial(jax.jit, static_argnums=(1, 2))
-def _hadamard_single(state, q, n):
-    dim    = 1 << n
-    stride = 1 << (n - 1 - q)
-    idx    = jnp.arange(dim, dtype=jnp.int64)
-    idx    = lax.with_sharding_constraint(idx, SHARDING)
-    bit_q  = (idx >> (n - 1 - q)) & 1
-    partner = idx ^ stride
+def _hadamard_single(state, q, n_counting):
+    dim_c = 1 << n_counting
+    stride = 1 << (n_counting - 1 - q)
+    idx_c = jnp.arange(dim_c, dtype=jnp.int32)
+    idx_c = lax.with_sharding_constraint(idx_c, SHARDING.reshape(NUM_DEV))
+    
+    bit_q = (idx_c >> (n_counting - 1 - q)) & 1
+    partner_c = idx_c ^ stride
+    
     inv_sqrt2 = jnp.float32(1.0 / np.sqrt(2.0))
-    amp_self    = state[idx]
-    amp_partner = state[partner]
+    amp_self = state
+    amp_partner = state[partner_c, :]
+    
+    bit_q = bit_q[:, None]
     return jnp.where(
         bit_q == 0,
         (amp_self + amp_partner) * inv_sqrt2,
         (amp_partner - amp_self) * inv_sqrt2,
     )
 
-def hadamard_flat(state, q, n):
-    return _hadamard_single(state, q, n)
+def hadamard_flat(state, q, n_counting):
+    return _hadamard_single(state, q, n_counting)
 
 @partial(jax.jit, static_argnums=(1, 2, 3))
-def _ctrl_phase_single(state, ctrl, tgt, n, cos_t, sin_t):
-    dim   = 1 << n
-    idx   = jnp.arange(dim, dtype=jnp.int64)
-    idx   = lax.with_sharding_constraint(idx, SHARDING)
-    bit_c = (idx >> (n - 1 - ctrl)) & 1
-    bit_t = (idx >> (n - 1 - tgt )) & 1
+def _ctrl_phase_single(state, ctrl, tgt, n_counting, cos_t, sin_t):
+    dim_c = 1 << n_counting
+    idx_c = jnp.arange(dim_c, dtype=jnp.int32)
+    idx_c = lax.with_sharding_constraint(idx_c, SHARDING.reshape(NUM_DEV))
+    
+    bit_c = (idx_c >> (n_counting - 1 - ctrl)) & 1
+    bit_t = (idx_c >> (n_counting - 1 - tgt )) & 1
     phase = jnp.where(
         (bit_c == 1) & (bit_t == 1),
         cos_t + 1j * sin_t,
         jnp.complex64(1.0),
     )
-    return state * phase.astype(jnp.complex64)
+    return state * phase[:, None].astype(jnp.complex64)
 
-def ctrl_phase_flat(state, ctrl, tgt, n, theta):
+def ctrl_phase_flat(state, ctrl, tgt, n_counting, theta):
     cos_t = jnp.float32(float(np.cos(theta)))
     sin_t = jnp.float32(float(np.sin(theta)))
-    return _ctrl_phase_single(state, ctrl, tgt, n, cos_t, sin_t)
+    return _ctrl_phase_single(state, ctrl, tgt, n_counting, cos_t, sin_t)
 
 @partial(jax.jit, static_argnums=(1, 2, 3))
-def _swap_single(state, q1, q2, n):
-    dim     = 1 << n
-    idx     = jnp.arange(dim, dtype=jnp.int64)
-    idx     = lax.with_sharding_constraint(idx, SHARDING)
-    bit_q1  = (idx >> (n - 1 - q1)) & 1
-    bit_q2  = (idx >> (n - 1 - q2)) & 1
-    need_swap = (bit_q1 != bit_q2)
-    partner  = idx ^ (1 << (n - 1 - q1)) ^ (1 << (n - 1 - q2))
-    return jnp.where(need_swap, state[partner], state[idx])
+def _swap_single(state, q1, q2, n_counting):
+    dim_c = 1 << n_counting
+    idx_c = jnp.arange(dim_c, dtype=jnp.int32)
+    idx_c = lax.with_sharding_constraint(idx_c, SHARDING.reshape(NUM_DEV))
+    
+    bit_q1 = (idx_c >> (n_counting - 1 - q1)) & 1
+    bit_q2 = (idx_c >> (n_counting - 1 - q2)) & 1
+    need_swap = (bit_q1 != bit_q2)[:, None]
+    partner_c = idx_c ^ (1 << (n_counting - 1 - q1)) ^ (1 << (n_counting - 1 - q2))
+    return jnp.where(need_swap, state[partner_c, :], state)
 
-def swap_flat(state, q1, q2, n):
-    return _swap_single(state, q1, q2, n)
+def swap_flat(state, q1, q2, n_counting):
+    return _swap_single(state, q1, q2, n_counting)
 
-def inverse_qft_flat(state, qubits, n):
+def inverse_qft_flat(state, qubits, n_counting):
     k = len(qubits)
     for i in range(k // 2):
-        state = swap_flat(state, qubits[i], qubits[k - 1 - i], n)
+        state = swap_flat(state, qubits[i], qubits[k - 1 - i], n_counting)
     for i in range(k - 1, -1, -1):
         q = qubits[i]
         for j in range(k - 1, i, -1):
             theta = -2.0 * np.pi / (1 << (j - i + 1))
-            state = ctrl_phase_flat(state, qubits[j], q, n, theta)
-        state = hadamard_flat(state, q, n)
+            state = ctrl_phase_flat(state, qubits[j], q, n_counting, theta)
+        state = hadamard_flat(state, q, n_counting)
     return state
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Controlled Modular Multiplication
 # ─────────────────────────────────────────────────────────────────────────────
 
-@partial(jax.jit, static_argnums=(1, 3, 4, 5))
-def _ctrl_mod_mul_jit(state, ctrl_qubit, perm_inv_jax, N, n_work, n):
-    dim = 1 << n
-    idx = jnp.arange(dim, dtype=jnp.int64)
-    idx = lax.with_sharding_constraint(idx, SHARDING)
+@partial(jax.jit, static_argnums=(1, 3, 4))
+def _ctrl_mod_mul_jit(state, ctrl_qubit, perm_inv_jax, N, n_counting):
+    dim_c = 1 << n_counting
+    idx_c = jnp.arange(dim_c, dtype=jnp.int32)
+    idx_c = lax.with_sharding_constraint(idx_c, SHARDING.reshape(NUM_DEV))
     
-    # 11 work qubits are contiguous at the end (LSB)
-    work_mask = (1 << n_work) - 1
-    work_val = idx & work_mask
+    ctrl_bit = (idx_c >> (n_counting - 1 - ctrl_qubit)) & 1
     
-    # Map permuted values back to source values using inverse permutation
-    src_work_val = perm_inv_jax[work_val]
-    
-    # Reconstruct the source index
-    non_work_idx = idx & ~work_mask
-    src_idx = non_work_idx | src_work_val
-    
-    # Controlled application
-    ctrl_bit = (idx >> (n - 1 - ctrl_qubit)) & 1
-    gather_idx = jnp.where(ctrl_bit == 1, src_idx, idx)
-    
-    return state[gather_idx]
+    permuted_state = state[:, perm_inv_jax]
+    return jnp.where(ctrl_bit[:, None] == 1, permuted_state, state)
 
-def ctrl_mod_mul_flat(state, ctrl_qubit, a_val, N, work_qubits, n):
+def ctrl_mod_mul_flat(state, ctrl_qubit, a_val, N, work_qubits, n_counting):
     """
     Apply controlled-U_a: if ctrl=|1⟩, map |x⟩_work → |a·x mod N⟩_work.
-    Implemented as a memory-efficient gather mapping on the sharded state vector.
+    Implemented as a 2D gather mapping on the sharded state vector.
     """
     n_work   = len(work_qubits)
     work_dim = 1 << n_work
 
     # Build inverse permutation table classically in numpy
-    perm = np.arange(work_dim, dtype=np.int64)
+    perm = np.arange(work_dim, dtype=np.int32)
     for x in range(N):
         perm[x] = (a_val * x) % N
         
-    perm_inv = np.arange(work_dim, dtype=np.int64)
-    perm_inv[perm[:N]] = np.arange(N, dtype=np.int64)
+    perm_inv = np.arange(work_dim, dtype=np.int32)
+    perm_inv[perm[:N]] = np.arange(N, dtype=np.int32)
     
-    perm_inv_jax = jnp.array(perm_inv, dtype=jnp.int64)
-    return _ctrl_mod_mul_jit(state, ctrl_qubit, perm_inv_jax, N, n_work, n)
+    perm_inv_jax = jnp.array(perm_inv, dtype=jnp.int32)
+    return _ctrl_mod_mul_jit(state, ctrl_qubit, perm_inv_jax, N, n_counting)
 
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Shor's Circuit Runner
-# ─────────────────────────────────────────────────────────────────────────────
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Shor's Circuit Runner & Post-Processing Helpers
 # ─────────────────────────────────────────────────────────────────────────────
 
-@partial(jax.jit, static_argnums=(0, 1, 2))
-def init_state_flat(n_counting, n_work, n):
-    dim = 1 << n
-    state = jnp.zeros(dim, dtype=jnp.complex64)
+@partial(jax.jit, static_argnums=(0, 1))
+def init_state_flat(n_counting, n_work):
+    dim_c = 1 << n_counting
+    dim_w = 1 << n_work
+    state = jnp.zeros((dim_c, dim_w), dtype=jnp.complex64)
     state = lax.with_sharding_constraint(state, SHARDING)
-    work_lsb_qubit = n_counting + n_work - 1
-    one_idx = 1 << (n - 1 - work_lsb_qubit)
-    state = state.at[one_idx].set(jnp.complex64(1.0))
+    state = state.at[0, 1].set(jnp.complex64(1.0))
     return lax.with_sharding_constraint(state, SHARDING)
-
 
 @partial(jax.jit, static_argnums=(1, 2))
 def marginalise_probs_jit(state, n_counting, n_work):
-    probs_full = jnp.abs(state) ** 2
-    probs_2d = probs_full.reshape(1 << n_counting, 1 << n_work)
+    probs_2d = jnp.abs(state) ** 2
     return probs_2d.sum(axis=1)
-
 
 @partial(jax.jit, static_argnums=(1, 2))
 def extract_phases_jit(state, n_counting, n_work):
     limit = min(1 << n_counting, 2048)
-    indices = jnp.arange(limit, dtype=jnp.int64)
-    basis_indices = (indices << n_work) | 1
-    amps = state[basis_indices]
+    indices = jnp.arange(limit, dtype=jnp.int32)
+    amps = state[indices, 1]
     return jnp.angle(amps)
 
 
@@ -346,7 +331,7 @@ def run_shor_circuit(a: int, N: int, n_counting: int, n_work: int,
     # 1. Init
     if verbose: print(f"\n  [1/4] Initialising |0⟩^{n_counting} ⊗ |1⟩_work ...", flush=True)
     t0    = time.perf_counter()
-    state = init_state_flat(n_counting, n_work, n)
+    state = init_state_flat(n_counting, n_work)
     state = lax.with_sharding_constraint(state, SHARDING)
     state.block_until_ready()
     timing["init_s"] = time.perf_counter() - t0
@@ -356,13 +341,14 @@ def run_shor_circuit(a: int, N: int, n_counting: int, n_work: int,
     if verbose: print(f"\n  [2/4] H^⊗{n_counting} on counting register ...", flush=True)
     t0 = time.perf_counter()
     for q in counting_qubits:
-        state = hadamard_flat(state, q, n)
+        state = hadamard_flat(state, q, n_counting)
     state.block_until_ready()
     timing["hadamard_s"] = time.perf_counter() - t0
     if verbose: print(f"      Done  ({timing['hadamard_s']:.3f}s)")
 
     # Snapshot: post-Hadamard (uniform superposition)
-    snap_had = np.array(jnp.abs(state[:min(512, 1 << n)]) ** 2)
+    snap_had_probs = marginalise_probs_jit(state, n_counting, n_work)
+    snap_had = np.array(snap_had_probs[:min(512, 1 << n_counting)])
     phase_snapshots.append(("After H⊗²²", snap_had))
 
     # 3. Controlled modular exponentiation
@@ -375,20 +361,21 @@ def run_shor_circuit(a: int, N: int, n_counting: int, n_work: int,
             print(f"      ctrl qubit {ctrl_q:2d}/{n_counting-1}  a^(2^{j}) mod {N} = {a_pow}",
                   flush=True)
         a_pow_sequence.append(a_pow)
-        state = ctrl_mod_mul_flat(state, ctrl_q, a_pow, N, work_qubits, n)
+        state = ctrl_mod_mul_flat(state, ctrl_q, a_pow, N, work_qubits, n_counting)
         a_pow = (a_pow * a_pow) % N
     state.block_until_ready()
     timing["mod_exp_s"] = time.perf_counter() - t0
     if verbose: print(f"      Done  ({timing['mod_exp_s']:.3f}s)")
 
     # Snapshot: post mod-exp (entangled)
-    snap_mod = np.array(jnp.abs(state[:min(512, 1 << n)]) ** 2)
+    snap_mod_probs = marginalise_probs_jit(state, n_counting, n_work)
+    snap_mod = np.array(snap_mod_probs[:min(512, 1 << n_counting)])
     phase_snapshots.append(("After Mod-Exp", snap_mod))
 
     # 4. Inverse QFT
     if verbose: print(f"\n  [4/4] Inverse QFT on {n_counting} counting qubits ...", flush=True)
     t0 = time.perf_counter()
-    state = inverse_qft_flat(state, counting_qubits, n)
+    state = inverse_qft_flat(state, counting_qubits, n_counting)
     state.block_until_ready()
     timing["iqft_s"] = time.perf_counter() - t0
     if verbose: print(f"      Done  ({timing['iqft_s']:.3f}s)")
