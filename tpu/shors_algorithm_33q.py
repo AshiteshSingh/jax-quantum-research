@@ -52,6 +52,8 @@ from matplotlib.ticker import FuncFormatter
 import matplotlib.colors as mcolors
 
 import jax
+from jax import config
+config.update("jax_enable_x64", True)
 import jax.numpy as jnp
 import jax.lax as lax
 from jax.sharding import PositionalSharding
@@ -176,7 +178,7 @@ from functools import partial
 def _hadamard_single(state, q, n):
     dim    = 1 << n
     stride = 1 << (n - 1 - q)
-    idx    = jnp.arange(dim, dtype=jnp.int32)
+    idx    = jnp.arange(dim, dtype=jnp.int64)
     idx    = lax.with_sharding_constraint(idx, SHARDING)
     bit_q  = (idx >> (n - 1 - q)) & 1
     partner = idx ^ stride
@@ -195,7 +197,7 @@ def hadamard_flat(state, q, n):
 @partial(jax.jit, static_argnums=(1, 2, 3))
 def _ctrl_phase_single(state, ctrl, tgt, n, cos_t, sin_t):
     dim   = 1 << n
-    idx   = jnp.arange(dim, dtype=jnp.int32)
+    idx   = jnp.arange(dim, dtype=jnp.int64)
     idx   = lax.with_sharding_constraint(idx, SHARDING)
     bit_c = (idx >> (n - 1 - ctrl)) & 1
     bit_t = (idx >> (n - 1 - tgt )) & 1
@@ -214,7 +216,7 @@ def ctrl_phase_flat(state, ctrl, tgt, n, theta):
 @partial(jax.jit, static_argnums=(1, 2, 3))
 def _swap_single(state, q1, q2, n):
     dim     = 1 << n
-    idx     = jnp.arange(dim, dtype=jnp.int32)
+    idx     = jnp.arange(dim, dtype=jnp.int64)
     idx     = lax.with_sharding_constraint(idx, SHARDING)
     bit_q1  = (idx >> (n - 1 - q1)) & 1
     bit_q2  = (idx >> (n - 1 - q2)) & 1
@@ -244,7 +246,7 @@ def inverse_qft_flat(state, qubits, n):
 @partial(jax.jit, static_argnums=(1, 3, 4, 5))
 def _ctrl_mod_mul_jit(state, ctrl_qubit, perm_inv_jax, N, n_work, n):
     dim = 1 << n
-    idx = jnp.arange(dim, dtype=jnp.int32)
+    idx = jnp.arange(dim, dtype=jnp.int64)
     idx = lax.with_sharding_constraint(idx, SHARDING)
     
     # 11 work qubits are contiguous at the end (LSB)
@@ -273,14 +275,14 @@ def ctrl_mod_mul_flat(state, ctrl_qubit, a_val, N, work_qubits, n):
     work_dim = 1 << n_work
 
     # Build inverse permutation table classically in numpy
-    perm = np.arange(work_dim, dtype=np.int32)
+    perm = np.arange(work_dim, dtype=np.int64)
     for x in range(N):
         perm[x] = (a_val * x) % N
         
-    perm_inv = np.arange(work_dim, dtype=np.int32)
-    perm_inv[perm[:N]] = np.arange(N, dtype=np.int32)
+    perm_inv = np.arange(work_dim, dtype=np.int64)
+    perm_inv[perm[:N]] = np.arange(N, dtype=np.int64)
     
-    perm_inv_jax = jnp.array(perm_inv, dtype=jnp.int32)
+    perm_inv_jax = jnp.array(perm_inv, dtype=jnp.int64)
     return _ctrl_mod_mul_jit(state, ctrl_qubit, perm_inv_jax, N, n_work, n)
 
 
@@ -313,7 +315,7 @@ def marginalise_probs_jit(state, n_counting, n_work):
 @partial(jax.jit, static_argnums=(1, 2))
 def extract_phases_jit(state, n_counting, n_work):
     limit = min(1 << n_counting, 2048)
-    indices = jnp.arange(limit, dtype=jnp.int32)
+    indices = jnp.arange(limit, dtype=jnp.int64)
     basis_indices = (indices << n_work) | 1
     amps = state[basis_indices]
     return jnp.angle(amps)
