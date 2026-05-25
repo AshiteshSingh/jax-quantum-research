@@ -56,15 +56,7 @@ from jax import config
 config.update("jax_enable_x64", True)
 import jax.numpy as jnp
 import jax.lax as lax
-try:
-    from jax.sharding import PositionalSharding
-except ImportError:
-    class PositionalSharding:
-        def __init__(self, devices):
-            self.devices = devices
-        def reshape(self, *args):
-            return self
-    lax.with_sharding_constraint = lambda x, sharding: x
+from jax.sharding import PositionalSharding
 
 warnings.filterwarnings("ignore", category=UserWarning)
 warnings.filterwarnings("ignore", message="Casting complex")
@@ -178,54 +170,61 @@ def try_factor(a: int, r: int, N: int):
 
 # ─────────────────────────────────────────────────────────────────────────────
 from functools import partial
+from jax.experimental.shard_map import shard_map
+from jax.sharding import Mesh, PartitionSpec
 
 # Flat 1-D state-vector gate primitives  (JAX JIT, shard-aware)
 # ─────────────────────────────────────────────────────────────────────────────
 
 H_MAT = jnp.array([[1, 1], [1, -1]], dtype=jnp.complex64) / jnp.sqrt(2.0)
 
+# Define the 1D device mesh to give the TPU network explicit dimensions
+TPU_MESH = Mesh(np.array(DEVICES), ('dev',))
+P_SPEC = PartitionSpec('dev', None)
+
 @partial(jax.jit, static_argnums=(1, 2))
 def _hadamard_single(state, q, n_counting):
-    dim_c = 1 << n_counting
-    dim_w = state.shape[1]
-    
-    q_split = int(math.log2(NUM_DEV))
-    
-    if q >= q_split:
-        # Case 1: Local Hadamard — Qubit is entirely inside each device's shard
-        local_bits = n_counting - q_split
-        local_b = n_counting - 1 - q
-        shape1 = 1 << (local_bits - 1 - local_b)
-        shape2 = 1 << local_b
+    # 4 Global Qubits (0,1,2,3) route across the 16 TPU chips. 
+    # Qubits 4+ live safely inside the local 16GB HBM.
+    if q >= 4:
+        # --- LOCAL QUBIT ---
+        @jax.jit
+        def local_h(local_s):
+            dim_w = local_s.shape[1]
+            q_loc = q - 4
+            shape1 = 1 << q_loc
+            shape2 = 1 << (n_counting - 4 - 1 - q_loc)
+            
+            s = local_s.reshape((shape1, 2, shape2, dim_w))
+            s = jnp.tensordot(H_MAT, s, axes=([1], [1]))
+            s = jnp.moveaxis(s, 0, 1)
+            return s.reshape(local_s.shape)
+            
+        return shard_map(local_h, TPU_MESH, in_specs=P_SPEC, out_specs=P_SPEC)(state)
         
-        s = state.reshape((NUM_DEV, shape1, 2, shape2, dim_w))
-        s = lax.with_sharding_constraint(s, PositionalSharding(DEVICES).reshape(NUM_DEV, 1, 1, 1, 1))
-        
-        s = jnp.tensordot(H_MAT, s, axes=([1], [2]))
-        s = lax.with_sharding_constraint(s, PositionalSharding(DEVICES).reshape(1, NUM_DEV, 1, 1, 1))
-        
-        s = jnp.transpose(s, (1, 2, 0, 3, 4))
-        s = lax.with_sharding_constraint(s, PositionalSharding(DEVICES).reshape(NUM_DEV, 1, 1, 1, 1))
-        
-        return s.reshape(state.shape)
     else:
-        # Case 2: Sharded Hadamard — Qubit requires pairwise communication
-        shape1 = 1 << q
-        shape2 = 1 << (n_counting - 1 - q)
-        
-        s = state.reshape((shape1, 2, shape2, dim_w))
-        s = lax.with_sharding_constraint(s, PositionalSharding(DEVICES).reshape(shape1, 2, NUM_DEV // (shape1 * 2), 1))
-        
-        s = jnp.tensordot(H_MAT, s, axes=([1], [1]))
-        s = lax.with_sharding_constraint(s, PositionalSharding(DEVICES).reshape(2, shape1, NUM_DEV // (shape1 * 2), 1))
-        
-        s = jnp.transpose(s, (1, 0, 2, 3))
-        s = lax.with_sharding_constraint(s, PositionalSharding(DEVICES).reshape(shape1, 2, NUM_DEV // (shape1 * 2), 1))
-        
-        return s.reshape(state.shape)
+        # --- GLOBAL QUBIT (Cross-Chip Butterfly Exchange) ---
+        @jax.jit
+        def global_h(local_s):
+            d = jax.lax.axis_index('dev')
+            bit_pos = 3 - q
+            bit_val = (d >> bit_pos) & 1
+            
+            # Pair up with partner TPU chip over the ICI
+            perm = [(i, i ^ (1 << bit_pos)) for i in range(16)]
+            partner_s = jax.lax.ppermute(local_s, axis_name='dev', perm=perm)
+            
+            # Apply H = [1 1; 1 -1] / sqrt(2) directly using paired memory
+            new_s = jnp.where(bit_val == 0,
+                              local_s + partner_s,
+                              partner_s - local_s) / jnp.sqrt(2.0)
+            return new_s.astype(jnp.complex64)
+
+        return shard_map(global_h, TPU_MESH, in_specs=P_SPEC, out_specs=P_SPEC)(state)
 
 def hadamard_flat(state, q, n_counting):
     return _hadamard_single(state, q, n_counting)
+
 
 @partial(jax.jit, static_argnums=(1, 2, 3))
 def _ctrl_phase_single(state, ctrl, tgt, n_counting, cos_t, sin_t):
@@ -247,6 +246,7 @@ def ctrl_phase_flat(state, ctrl, tgt, n_counting, theta):
     sin_t = jnp.float32(float(np.sin(theta)))
     return _ctrl_phase_single(state, ctrl, tgt, n_counting, cos_t, sin_t)
 
+
 @partial(jax.jit, static_argnums=(1, 2, 3))
 def _swap_single(state, q1, q2, n_counting):
     if q1 == q2:
@@ -255,44 +255,65 @@ def _swap_single(state, q1, q2, n_counting):
     q_min = min(q1, q2)
     q_max = max(q1, q2)
     
-    dim_c = 1 << n_counting
-    dim_w = state.shape[1]
-    
-    q_split = int(math.log2(NUM_DEV))
-    
-    if q_min >= q_split:
-        # Case 1: Local Swap — Both qubits reside entirely inside the local device shard
-        b_min = n_counting - 1 - q_max
-        b_max = n_counting - 1 - q_min
+    @jax.jit
+    def local_swap(local_s):
+        qm, qM = q_min - 4, q_max - 4
+        dim_w = local_s.shape[1]
+        shape1 = 1 << qm
+        shape2 = 1 << (qM - qm - 1)
+        shape3 = 1 << (n_counting - 4 - 1 - qM)
         
-        local_bits = n_counting - q_split
-        shape1 = 1 << (local_bits - 1 - b_max)
-        shape2 = 1 << (b_max - b_min - 1)
-        shape3 = 1 << b_min
-        
-        s = state.reshape((NUM_DEV, shape1, 2, shape2, 2, shape3, dim_w))
-        s = lax.with_sharding_constraint(s, PositionalSharding(DEVICES).reshape(NUM_DEV, 1, 1, 1, 1, 1, 1))
-        
-        s = jnp.swapaxes(s, 2, 4)
-        s = lax.with_sharding_constraint(s, PositionalSharding(DEVICES).reshape(NUM_DEV, 1, 1, 1, 1, 1, 1))
-        
-        return s.reshape(state.shape)
-    else:
-        # Case 2: Sharded Swap — Non-local swap requiring inter-device communication
-        shape1 = 1 << q_min
-        shape2 = 1 << (q_max - q_min - 1)
-        shape3 = 1 << (n_counting - 1 - q_max)
-        
-        s = state.reshape((shape1, 2, shape2, 2, shape3, dim_w))
-        s = lax.with_sharding_constraint(s, PositionalSharding(DEVICES).reshape(shape1, 2, NUM_DEV // (shape1 * 2), 1, 1, 1))
-        
+        s = local_s.reshape((shape1, 2, shape2, 2, shape3, dim_w))
         s = jnp.swapaxes(s, 1, 3)
-        s = lax.with_sharding_constraint(s, PositionalSharding(DEVICES).reshape(shape1, 2, NUM_DEV // (shape1 * 2), 1, 1, 1))
+        return s.reshape(local_s.shape)
+
+    @jax.jit
+    def global_swap(local_s):
+        d = jax.lax.axis_index('dev')
+        bit1 = (d >> (3 - q_min)) & 1
+        bit2 = (d >> (3 - q_max)) & 1
         
-        return s.reshape(state.shape)
+        partner = (1 << (3 - q_min)) ^ (1 << (3 - q_max))
+        perm = [(i, i ^ partner) for i in range(16)]
+        
+        partner_s = jax.lax.ppermute(local_s, axis_name='dev', perm=perm)
+        return jnp.where(bit1 != bit2, partner_s, local_s)
+
+    @jax.jit
+    def cross_swap(local_s):
+        # Swaps a chip-level network routing bit with a local memory bit
+        d = jax.lax.axis_index('dev')
+        bit_g = (d >> (3 - q_min)) & 1
+        
+        perm = [(i, i ^ (1 << (3 - q_min))) for i in range(16)]
+        partner_s = jax.lax.ppermute(local_s, axis_name='dev', perm=perm)
+        
+        q_loc = q_max - 4
+        dim_w = local_s.shape[1]
+        shape1 = 1 << q_loc
+        shape2 = 1 << (n_counting - 4 - 1 - q_loc)
+        
+        s = local_s.reshape((shape1, 2, shape2, dim_w))
+        partner_s = partner_s.reshape((shape1, 2, shape2, dim_w))
+        
+        # Mask and swap the halves of the local array dynamically
+        local_bit_idx = jnp.array([0, 1]).reshape((1, 2, 1, 1))
+        keep_mask = (local_bit_idx == bit_g)
+        partner_slice = jnp.take(partner_s, bit_g, axis=1, keepdims=True)
+        
+        new_s = jnp.where(keep_mask, s, partner_slice)
+        return new_s.reshape(local_s.shape)
+
+    if q_min >= 4:
+        return shard_map(local_swap, TPU_MESH, in_specs=P_SPEC, out_specs=P_SPEC)(state)
+    elif q_max < 4:
+        return shard_map(global_swap, TPU_MESH, in_specs=P_SPEC, out_specs=P_SPEC)(state)
+    else:
+        return shard_map(cross_swap, TPU_MESH, in_specs=P_SPEC, out_specs=P_SPEC)(state)
 
 def swap_flat(state, q1, q2, n_counting):
     return _swap_single(state, q1, q2, n_counting)
+
 
 def inverse_qft_flat(state, qubits, n_counting):
     k = len(qubits)
