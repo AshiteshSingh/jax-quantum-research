@@ -81,7 +81,7 @@ def apply_local_layer(mps_state, gate_u, layer_type="even"):
         start_idx = 0 if layer_type == "even" else 1
         entropies = jnp.zeros((QUBITS_PER_CHIP // 2,), dtype=jnp.float32)
         
-        # FIX: Inform the ShardMap compiler that the tracking array's manual axis varies across 'dev'
+        # Inform the ShardMap compiler that the tracking array's manual axis varies across 'dev'
         entropies = jax.lax.pvary(entropies, ('dev',))
 
         def scan_step(carry, idx):
@@ -108,7 +108,9 @@ def apply_local_layer(mps_state, gate_u, layer_type="even"):
 
         indices = jnp.arange(start_idx, QUBITS_PER_CHIP - 1, 2)
         (final_tensors, final_entropies), _ = jax.lax.scan(scan_step, (local_tensors, entropies), indices)
-        return final_tensors, jnp.mean(final_entropies)
+        
+        # FIX 1: Add [None] to turn scalar into rank-1 tensor for shard_map concatenation
+        return final_tensors, jnp.mean(final_entropies)[None]
 
     return shard_map(chip_sweep, TPU_MESH, in_specs=P_SPEC, out_specs=(P_SPEC, PartitionSpec('dev')))(mps_state)
 
@@ -128,7 +130,9 @@ def evaluate_vqe_energy(theta, initial_mps):
             z_exp = jnp.real(jnp.trace(rho_local @ Z_MAT))
             return carry + z_exp, None
         total_z, _ = jax.lax.scan(scan_z, 0.0, local_tensors)
-        return total_z
+        
+        # FIX 2: Add [None] to turn scalar expectation into rank-1 tensor
+        return total_z[None]
 
     local_energies = shard_map(measure_local_z, TPU_MESH, in_specs=P_SPEC, out_specs=PartitionSpec('dev'))(mps)
     global_energy = jnp.sum(local_energies) / TOTAL_QUBITS
