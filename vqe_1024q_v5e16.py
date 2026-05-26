@@ -1,4 +1,4 @@
- #!/usr/bin/env python3
+#!/usr/bin/env python3
 """
 ================================================================================
   Advanced QML Research: 1,024-Qubit Differentiable MPS on TPU v5e-16
@@ -20,7 +20,7 @@ os.environ["XLA_PYTHON_CLIENT_PREALLOCATE"] = "true"
 os.environ["XLA_PYTHON_CLIENT_MEM_FRACTION"] = "0.95"
 
 import jax
-# CRITICAL FIX FOR MULTI-HOST CLUSTERS: Initialize global worker coordination service
+# CRITICAL FOR MULTI-HOST CLUSTERS: Initialize global worker coordination service
 jax.distributed.initialize()
 
 import jax.numpy as jnp
@@ -69,7 +69,7 @@ def get_parametric_su4_gate(theta):
 # ─────────────────────────────────────────────────────────────────────────────
 @jax.jit
 def initialize_mps():
-    def local_init(mesh_index):
+    def local_init():
         tensors = jnp.zeros((QUBITS_PER_CHIP, CHI, 2, CHI), dtype=jnp.complex64)
         tensors = tensors.at[:, 0, 0, 0].set(1.0 + 0.0j)
         return tensors
@@ -80,6 +80,9 @@ def apply_local_layer(mps_state, gate_u, layer_type="even"):
     def chip_sweep(local_tensors):
         start_idx = 0 if layer_type == "even" else 1
         entropies = jnp.zeros((QUBITS_PER_CHIP // 2,), dtype=jnp.float32)
+        
+        # FIX: Inform the ShardMap compiler that the tracking array's manual axis varies across 'dev'
+        entropies = jax.lax.pvary(entropies, ('dev',))
 
         def scan_step(carry, idx):
             tensors, ent_arr = carry
