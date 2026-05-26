@@ -20,10 +20,7 @@ os.environ["XLA_PYTHON_CLIENT_PREALLOCATE"] = "true"
 os.environ["XLA_PYTHON_CLIENT_MEM_FRACTION"] = "0.95"
 
 import jax
-
-# =============================================================================
-# CRITICAL FIX: Initialize distributed cluster before querying devices
-# =============================================================================
+# CRITICAL FIX FOR MULTI-HOST CLUSTERS: Initialize global worker coordination service
 jax.distributed.initialize()
 
 import jax.numpy as jnp
@@ -73,7 +70,6 @@ def get_parametric_su4_gate(theta):
 @jax.jit
 def initialize_mps():
     def local_init(mesh_index):
-        # Shape: (64, 128, 2, 128)
         tensors = jnp.zeros((QUBITS_PER_CHIP, CHI, 2, CHI), dtype=jnp.complex64)
         tensors = tensors.at[:, 0, 0, 0].set(1.0 + 0.0j)
         return tensors
@@ -92,7 +88,6 @@ def apply_local_layer(mps_state, gate_u, layer_type="even"):
             fused = jnp.einsum("ijk,klm->ijlm", site1, site2)
             transformed = jnp.einsum("abcd,ibcj->iadj", gate_u, fused)
             
-            # 256x256 MXU saturation block
             mat = transformed.reshape((CHI * 2, 2 * CHI))
             u, s, vh = jnp.linalg.svd(mat, full_matrices=False)
             
@@ -144,7 +139,6 @@ vqe_grad_engine = jax.jit(jax.value_and_grad(evaluate_vqe_energy, argnums=0, has
 # 5. DATA EXPORT (PLOTS & TXT)
 # ─────────────────────────────────────────────────────────────────────────────
 def export_research_artifacts(metrics, ts):
-    # 1. Generate TXT Report
     txt_filepath = f"tpu/logs/vqe_report_{ts}.txt"
     with open(txt_filepath, "w") as f:
         f.write("============================================================\n")
@@ -161,7 +155,6 @@ def export_research_artifacts(metrics, ts):
     
     print(f"\n📄 TXT Data Log saved to: {txt_filepath}")
 
-    # 2. Generate PNG Dashboard
     bg_color, panel_color, text_color, grid_color = "#0d1117", "#161b22", "#e6edf3", "#30363d"
     fig = plt.figure(figsize=(16, 10), facecolor=bg_color)
     gs = gridspec.GridSpec(2, 2, figure=fig, hspace=0.3, wspace=0.25)
