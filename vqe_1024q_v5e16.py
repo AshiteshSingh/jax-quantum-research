@@ -58,6 +58,7 @@ def get_parametric_su4_gate(theta):
 # ─────────────────────────────────────────────────────────────────────────────
 # 3. DISTRIBUTED TENSOR NETWORK (PMAP ISOLATED)
 # ─────────────────────────────────────────────────────────────────────────────
+# Standard @jax.pmap works fine here because it has no arguments
 @jax.pmap
 def initialize_local_mps(device_index):
     # Initializes a local 64-qubit chunk natively inside each TPU's HBM
@@ -97,9 +98,8 @@ def apply_local_layer(local_tensors, gate_u, layer_type="even"):
 # ─────────────────────────────────────────────────────────────────────────────
 # 4. DIFFERENTIABLE AUTODIFF ENGINE (PMAP REDUCTION)
 # ─────────────────────────────────────────────────────────────────────────────
-# We map over the 16 devices (axis 0 of local_mps), while broadcasting theta (None)
-@jax.pmap(axis_name='dev', in_axes=(None, 0))
-def vqe_grad_engine(theta, local_mps):
+# Define the base function normally without the decorator
+def _vqe_grad_engine_impl(theta, local_mps):
     
     def evaluate_local_energy(t, mps):
         gate_u = get_parametric_su4_gate(t)
@@ -126,6 +126,10 @@ def vqe_grad_engine(theta, local_mps):
     global_ent = jax.lax.pmean(local_ent, axis_name='dev')
     
     return global_z, global_grad, new_local_mps, global_ent
+
+# Map over the 16 devices (axis 0 of local_mps), while broadcasting theta (None)
+# We pass the function explicitly as the first argument to avoid Python decorator errors
+vqe_grad_engine = jax.pmap(_vqe_grad_engine_impl, axis_name='dev', in_axes=(None, 0))
 
 # ─────────────────────────────────────────────────────────────────────────────
 # 5. DATA EXPORT (PLOTS & TXT)
