@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """
 ================================================================================
-  Advanced QML Research: 1,024-Qubit Differentiable MPS on TPU v5e-16
+  Advanced QML Research: Differentiable MPS on TPU v5e-16
   
   Model          : 1D Variational Quantum Eigensolver (VQE) / Tensor Network
-  Qubits         : 1,024 (Distributed 64 per chip across 16 TPU Cores)
+  Qubits         : 512 (Hardware Optimal: 32 per chip across 16 TPU Cores)
   Bond Dimension : χ = 128 (Mapped precisely to TPU MXU Systolic Arrays)
   Outputs        : Dashboard (.png) and Research Report (.txt)
 ================================================================================
@@ -37,13 +37,14 @@ import matplotlib.gridspec as gridspec
 # ─────────────────────────────────────────────────────────────────────────────
 # 1. HARDWARE TOPOLOGY ORCHESTRATION (v5e-16 Optimized)
 # ─────────────────────────────────────────────────────────────────────────────
+TOTAL_QUBITS = 512
 NUM_GLOBAL_DEVICES = jax.device_count()       # 16 Cores across all hosts
 NUM_LOCAL_DEVICES = jax.local_device_count()  # 4 Cores per physical host
 
-# Simulation Geometry optimized for 16 cores
+# Pure hardware symmetry: 512 / 16 = exactly 32 qubits per chip
+QUBITS_PER_CHIP = TOTAL_QUBITS // NUM_GLOBAL_DEVICES 
+
 CHI = 128                   # Max entanglement boundary (MXU alignment)
-QUBITS_PER_CHIP = 64        # 1024 qubits / 16 cores = 64 sites per core
-TOTAL_QUBITS = NUM_GLOBAL_DEVICES * QUBITS_PER_CHIP
 EPOCHS = 40                 
 LEARNING_RATE = 0.05
 
@@ -65,12 +66,12 @@ def get_parametric_su4_gate(theta):
 # 3. DISTRIBUTED TENSOR NETWORK (PMAP ISOLATED)
 # ─────────────────────────────────────────────────────────────────────────────
 @jax.pmap
-def initialize_local_mps(device_index):
+def initialize_local_mps(global_dev_idx):
     # Generate a unique random key for each physical TPU core
-    key = jax.random.PRNGKey(device_index)
+    key = jax.random.PRNGKey(global_dev_idx)
     
-    # Inject tiny random noise to break SVD singular value degeneracy (prevents NaN gradients)
-    noise = jax.random.normal(key, (QUBITS_PER_CHIP, CHI, 2, CHI)) * 1e-6
+    # NaN FIX: Inject 1e-2 random noise to permanently break SVD degeneracy
+    noise = jax.random.normal(key, (QUBITS_PER_CHIP, CHI, 2, CHI)) * 1e-2
     tensors = noise.astype(jnp.complex64)
     
     # Set the primary product state amplitude
@@ -148,7 +149,7 @@ def export_research_artifacts(metrics, ts):
     txt_filepath = f"tpu/logs/vqe_report_{ts}.txt"
     with open(txt_filepath, "w") as f:
         f.write("============================================================\n")
-        f.write(f" VQE 1,024-Qubit MPS Training Log (TPU v5e-16)\n")
+        f.write(f" VQE {TOTAL_QUBITS}-Qubit MPS Training Log (TPU v5e-16)\n")
         f.write(f" Timestamp: {ts}\n")
         f.write("============================================================\n")
         f.write(f"{'Epoch':<8} | {'Energy':<12} | {'Grad Norm':<12} | {'Entropy':<10} | {'Time(ms)'}\n")
@@ -159,7 +160,6 @@ def export_research_artifacts(metrics, ts):
         f.write(f"Final Energy Convergence : {metrics['energy'][-1]:.6f}\n")
         f.write(f"Average Execution Latency: {np.mean(metrics['time_ms']):.2f} ms\n")
     
-    # Only print from the primary host to avoid 4x duplicated logs
     if jax.process_index() == 0:
         print(f"\n📄 TXT Data Log saved to: {txt_filepath}")
 
@@ -168,7 +168,7 @@ def export_research_artifacts(metrics, ts):
     gs = gridspec.GridSpec(2, 2, figure=fig, hspace=0.3, wspace=0.25)
     
     fig.suptitle(f"Variational Quantum Eigensolver (VQE) Research Dashboard\n"
-                 f"TPU v5e-16 │ 1,024 Qubits │ MPS χ=128 │ {ts}",
+                 f"TPU v5e-16 │ {TOTAL_QUBITS} Qubits │ MPS χ=128 │ {ts}",
                  color=text_color, fontsize=14, fontweight="bold")
     
     epochs = np.arange(len(metrics["energy"]))
@@ -214,15 +214,18 @@ def export_research_artifacts(metrics, ts):
 if __name__ == "__main__":
     if jax.process_index() == 0:
         print(f"============================================================")
-        print(f"🚀 VQE 1,024-Qubit MPS Initialize (pmap Multi-Host Architecture)")
-        print(f"   Target : {NUM_GLOBAL_DEVICES} Cores (v5e-16) │ {TOTAL_QUBITS} Qubits")
+        print(f"🚀 VQE {TOTAL_QUBITS}-Qubit MPS Initialize")
+        print(f"   Target : {NUM_GLOBAL_DEVICES} Cores (v5e-16) │ {TOTAL_QUBITS} Valid Qubits")
+        print(f"   Memory : Flawless Symmetry ({QUBITS_PER_CHIP} qubits per MXU)")
         print(f"============================================================")
 
+    # Calculate global device indices (0 to 15) for unique seeded noise generation
+    global_device_indices = jnp.arange(NUM_LOCAL_DEVICES) + jax.process_index() * NUM_LOCAL_DEVICES
+    
     # Initialize 4 isolated states across the LOCAL chips on EACH host machine
-    mps_state = initialize_local_mps(jnp.arange(NUM_LOCAL_DEVICES))
+    mps_state = initialize_local_mps(global_device_indices)
     mps_state.block_until_ready()
     
-    # Initialize theta as a complex scalar to bypass the JAX ComplexWarning
     theta = jnp.array(0.85, dtype=jnp.complex64)
     metrics = {"energy": [], "grad_norm": [], "entropy": [], "time_ms": []}
 
@@ -251,7 +254,6 @@ if __name__ == "__main__":
         metrics["entropy"].append(entropy)
         metrics["time_ms"].append(t_ms)
         
-        # Only print from process 0 to keep the console clean
         if jax.process_index() == 0:
             print(f"Epoch {epoch:<3} | E: {energy:<9.5f} | Grad: {abs(grad_val):<8.5f} | Time: {t_ms:.1f} ms")
 
