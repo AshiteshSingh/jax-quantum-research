@@ -70,14 +70,16 @@ def initialize_local_mps(global_dev_idx):
     # Generate a unique random key for each physical TPU core
     key = jax.random.PRNGKey(global_dev_idx)
     
-    # NaN FIX: Inject 1e-2 random noise to permanently break SVD degeneracy
+    # Inject 1e-2 random noise to permanently break initial SVD degeneracy
     noise = jax.random.normal(key, (QUBITS_PER_CHIP, CHI, 2, CHI)) * 1e-2
     tensors = noise.astype(jnp.complex64)
     
     # Set the primary product state amplitude
     tensors = tensors.at[:, 0, 0, 0].set(1.0 + 0.0j)
     
-    return tensors
+    # Globally normalize the initial state
+    norm = jnp.linalg.norm(tensors)
+    return tensors / (norm + 1e-12)
 
 def apply_local_layer(local_tensors, gate_u, layer_type="even"):
     start_idx = 0 if layer_type == "even" else 1
@@ -95,12 +97,17 @@ def apply_local_layer(local_tensors, gate_u, layer_type="even"):
         mat = transformed.reshape((CHI * 2, 2 * CHI))
         u, s, vh = jnp.linalg.svd(mat, full_matrices=False)
         
-        s_norm = s / jnp.linalg.norm(s)
-        s_sq = jnp.square(s_norm) + 1e-12 
-        entropy = -jnp.sum(s_sq * jnp.log2(s_sq))
+        # Calculate entanglement entropy
+        s_norm = s / (jnp.linalg.norm(s) + 1e-12)
+        s_sq = jnp.square(s_norm)
+        entropy = -jnp.sum(s_sq * jnp.log2(s_sq + 1e-12))
+        
+        # NORM EXPLOSION FIX: Explicitly renormalize the truncated singular values
+        s_trunc = s[:CHI]
+        s_trunc = s_trunc / (jnp.linalg.norm(s_trunc) + 1e-12)
         
         new_site1 = u[:, :CHI].reshape((CHI, 2, CHI))
-        new_site2 = (jnp.diag(s[:CHI]) @ vh[:CHI, :]).reshape((CHI, 2, CHI))
+        new_site2 = (jnp.diag(s_trunc) @ vh[:CHI, :]).reshape((CHI, 2, CHI))
         
         local_tensors = local_tensors.at[idx].set(new_site1)
         local_tensors = local_tensors.at[idx + 1].set(new_site2)
@@ -139,7 +146,6 @@ def _vqe_grad_engine_impl(theta, local_mps):
     
     return global_z, global_grad, new_local_mps, global_ent
 
-# Map over the LOCAL devices (axis 0 of local_mps), while broadcasting theta (None)
 vqe_grad_engine = jax.pmap(_vqe_grad_engine_impl, axis_name='dev', in_axes=(None, 0))
 
 # ─────────────────────────────────────────────────────────────────────────────
