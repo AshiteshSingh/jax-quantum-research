@@ -20,6 +20,12 @@ os.environ["XLA_PYTHON_CLIENT_PREALLOCATE"] = "true"
 os.environ["XLA_PYTHON_CLIENT_MEM_FRACTION"] = "0.95"
 
 import jax
+
+# =============================================================================
+# CRITICAL FIX: Initialize distributed cluster before querying devices
+# =============================================================================
+jax.distributed.initialize()
+
 import jax.numpy as jnp
 import jax.lax as lax
 from jax.experimental.shard_map import shard_map
