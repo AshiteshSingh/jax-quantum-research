@@ -12,8 +12,13 @@
 
 import os
 import time
+import warnings
 from datetime import datetime
 import numpy as np
+
+# Suppress JAX's Wirtinger calculus Complex-to-Real warnings for clean logs
+warnings.filterwarnings("ignore", category=UserWarning)
+warnings.filterwarnings("ignore", module="jax")
 
 # Force XLA to preallocate HBM to prevent memory fragmentation
 os.environ["XLA_PYTHON_CLIENT_PREALLOCATE"] = "true"
@@ -61,9 +66,16 @@ def get_parametric_su4_gate(theta):
 # ─────────────────────────────────────────────────────────────────────────────
 @jax.pmap
 def initialize_local_mps(device_index):
-    # Initializes a local 64-qubit chunk natively inside each TPU's HBM
-    tensors = jnp.zeros((QUBITS_PER_CHIP, CHI, 2, CHI), dtype=jnp.complex64)
+    # Generate a unique random key for each physical TPU core
+    key = jax.random.PRNGKey(device_index)
+    
+    # Inject tiny random noise to break SVD singular value degeneracy (prevents NaN gradients)
+    noise = jax.random.normal(key, (QUBITS_PER_CHIP, CHI, 2, CHI)) * 1e-6
+    tensors = noise.astype(jnp.complex64)
+    
+    # Set the primary product state amplitude
     tensors = tensors.at[:, 0, 0, 0].set(1.0 + 0.0j)
+    
     return tensors
 
 def apply_local_layer(local_tensors, gate_u, layer_type="even"):
