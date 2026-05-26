@@ -49,6 +49,12 @@ def apply_local_layer(local_tensors, gate_u, layer_type="even"):
         fused = jnp.einsum("ijk,klm->ijlm", site1, site2)
         transformed = jnp.einsum("abcd,ibcj->iadj", gate_u, fused)
         mat = transformed.reshape((CHI * 2, 2 * CHI))
+        
+        # SVD stability: Add a tiny complex noise to break zero-degeneracy in gradients
+        noise_key = jax.random.PRNGKey(idx)
+        noise = jax.random.normal(noise_key, mat.shape) + 1j * jax.random.normal(noise_key, mat.shape)
+        mat = mat + 1e-9 * noise.astype(jnp.complex64)
+        
         u, s, vh = jnp.linalg.svd(mat, full_matrices=False)
         s_trunc = s[:CHI] / (jnp.linalg.norm(s[:CHI]) + EPS)
         new_site1 = u[:, :CHI].reshape((CHI, 2, CHI))
@@ -62,22 +68,32 @@ def _vqe_grad_engine_impl(theta, local_mps):
         gate_u = get_parametric_su4_gate(t)
         mps = apply_local_layer(local_mps, gate_u, "even")
         mps = apply_local_layer(mps, gate_u, "odd")
-        rho = jnp.einsum("ijk,ilk->jl", mps[0], jnp.conj(mps[0]))
-        return jnp.real(jnp.trace(rho @ Z_MAT)), mps
+        
+        # Evaluate energy across all qubits on the chip to ensure all sites get optimized
+        total_z = 0.0
+        for idx in range(QUBITS_PER_CHIP):
+            tensor = mps[idx]
+            rho_local = jnp.einsum("ijk,ilk->jl", tensor, jnp.conj(tensor))
+            z_exp = jnp.real(jnp.trace(rho_local @ Z_MAT))
+            total_z = total_z + z_exp
+        return total_z, mps
     
     (local_z, new_local_mps), local_grad = jax.value_and_grad(evaluate_local_energy, has_aux=True)(theta)
     # Stability: Gradient Clipping
     local_grad = jnp.clip(jnp.real(local_grad), -0.5, 0.5).astype(jnp.complex64)
-    return (jax.lax.psum(local_z, 'dev') / NUM_GLOBAL_DEVICES, 
-            jax.lax.psum(local_grad, 'dev') / NUM_GLOBAL_DEVICES, 
-            new_local_mps)
+    
+    # Global reductions across TPU cores
+    global_z = jax.lax.psum(local_z, 'dev') / TOTAL_QUBITS
+    global_grad = jax.lax.psum(local_grad, 'dev') / TOTAL_QUBITS
+    return global_z, global_grad, new_local_mps
 
 vqe_grad_engine = jax.pmap(_vqe_grad_engine_impl, axis_name='dev', in_axes=(None, 0))
 
 # 4. TRAINING LOOP
 def run_training():
-    # Corrected for Multi-Host: Use local device count
-    mps_state = initialize_local_mps(jnp.arange(NUM_LOCAL_DEVICES))
+    # Corrected for Multi-Host: Generate unique keys across all TPU hosts
+    global_device_indices = jnp.arange(NUM_LOCAL_DEVICES) + jax.process_index() * NUM_LOCAL_DEVICES
+    mps_state = initialize_local_mps(global_device_indices)
     theta = jnp.array(0.85, dtype=jnp.complex64)
     energies = []
     
