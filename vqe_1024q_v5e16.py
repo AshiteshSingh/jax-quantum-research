@@ -75,13 +75,15 @@ def initialize_mps():
     return shard_map(local_init, TPU_MESH, in_specs=PartitionSpec(), out_specs=P_SPEC)()
 
 def apply_local_layer(mps_state, gate_u, layer_type="even"):
-    @jax.jit
+    # Reshape to explicitly map over the TPU cores (axis 0)
+    reshaped_mps = mps_state.reshape((NUM_DEVICES, QUBITS_PER_CHIP, CHI, 2, CHI))
+    
     def chip_sweep(local_tensors):
         start_idx = 0 if layer_type == "even" else 1
         entropies_list = []
         limit = QUBITS_PER_CHIP - 1
         
-        # FIXED: Loop unrolling completely bypasses SVD autodiff bugs inside shard_map!
+        # Loop unrolling prevents control flow (lax.scan) collisions with SVD
         for idx in range(start_idx, limit, 2):
             site1 = local_tensors[idx]
             site2 = local_tensors[idx + 1]
@@ -106,7 +108,16 @@ def apply_local_layer(mps_state, gate_u, layer_type="even"):
         mean_entropy = jnp.mean(jnp.stack(entropies_list))
         return local_tensors, mean_entropy[None]
 
-    return shard_map(chip_sweep, TPU_MESH, in_specs=P_SPEC, out_specs=(P_SPEC, PartitionSpec('dev')))(mps_state)
+    # FIXED: Replaced shard_map with vmap to bypass internal SVD VMA tracking bugs.
+    new_reshaped_mps, entropies = jax.vmap(chip_sweep)(reshaped_mps)
+    
+    # Flatten back to global distributed state
+    new_mps = new_reshaped_mps.reshape((TOTAL_QUBITS, CHI, 2, CHI))
+    
+    # Explicitly enforce the original sharding constraint for XLA auto-SPMD compiler
+    new_mps = jax.lax.with_sharding_constraint(new_mps, P_SPEC)
+    
+    return new_mps, entropies
 
 # ─────────────────────────────────────────────────────────────────────────────
 # 4. DIFFERENTIABLE AUTODIFF ENGINE (LOOP UNROLLED)
