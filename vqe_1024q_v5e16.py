@@ -22,10 +22,7 @@ os.environ["XLA_PYTHON_CLIENT_MEM_FRACTION"] = "0.95"
 import jax
 # CRITICAL FOR MULTI-HOST CLUSTERS: Initialize global worker coordination service
 jax.distributed.initialize()
-
 import jax.numpy as jnp
-from jax.experimental.shard_map import shard_map
-from jax.sharding import Mesh, PartitionSpec, NamedSharding
 
 import matplotlib
 matplotlib.use("Agg")
@@ -35,14 +32,7 @@ import matplotlib.gridspec as gridspec
 # ─────────────────────────────────────────────────────────────────────────────
 # 1. HARDWARE TOPOLOGY ORCHESTRATION (v5e-16 Optimized)
 # ─────────────────────────────────────────────────────────────────────────────
-DEVICES = jax.devices()
-NUM_DEVICES = len(DEVICES) # Will register 16 cores
-
-TPU_MESH = Mesh(np.array(DEVICES), ('dev',))
-P_SPEC = PartitionSpec('dev', None, None, None)
-
-# Bind the Mesh and Spec together to bypass context manager requirements
-TPU_SHARDING = NamedSharding(TPU_MESH, P_SPEC)
+NUM_DEVICES = jax.device_count() # 16 Cores
 
 # Simulation Geometry optimized for 16 cores
 CHI = 128                   # Max entanglement boundary (MXU alignment)
@@ -60,96 +50,82 @@ os.makedirs("tpu/logs", exist_ok=True)
 # ─────────────────────────────────────────────────────────────────────────────
 Z_MAT = jnp.array([[1, 0], [0, -1]], dtype=jnp.complex64)
 
-@jax.jit
 def get_parametric_su4_gate(theta):
     h_zz = jnp.diag(jnp.array([1, -1, -1, 1], dtype=jnp.complex64))
     gate = jnp.cos(theta) * jnp.eye(4) - 1j * jnp.sin(theta) * h_zz
     return gate.reshape((2, 2, 2, 2))
 
 # ─────────────────────────────────────────────────────────────────────────────
-# 3. DISTRIBUTED TENSOR NETWORK (LOOP UNROLLED)
+# 3. DISTRIBUTED TENSOR NETWORK (PMAP ISOLATED)
 # ─────────────────────────────────────────────────────────────────────────────
-@jax.jit
-def initialize_mps():
-    def local_init():
-        tensors = jnp.zeros((QUBITS_PER_CHIP, CHI, 2, CHI), dtype=jnp.complex64)
-        tensors = tensors.at[:, 0, 0, 0].set(1.0 + 0.0j)
-        return tensors
-    return shard_map(local_init, TPU_MESH, in_specs=PartitionSpec(), out_specs=P_SPEC)()
+@jax.pmap
+def initialize_local_mps(device_index):
+    # Initializes a local 64-qubit chunk natively inside each TPU's HBM
+    tensors = jnp.zeros((QUBITS_PER_CHIP, CHI, 2, CHI), dtype=jnp.complex64)
+    tensors = tensors.at[:, 0, 0, 0].set(1.0 + 0.0j)
+    return tensors
 
-def apply_local_layer(mps_state, gate_u, layer_type="even"):
-    # Reshape to explicitly map over the TPU cores (axis 0)
-    reshaped_mps = mps_state.reshape((NUM_DEVICES, QUBITS_PER_CHIP, CHI, 2, CHI))
+def apply_local_layer(local_tensors, gate_u, layer_type="even"):
+    start_idx = 0 if layer_type == "even" else 1
+    entropies_list = []
+    limit = QUBITS_PER_CHIP - 1
     
-    def chip_sweep(local_tensors):
-        start_idx = 0 if layer_type == "even" else 1
-        entropies_list = []
-        limit = QUBITS_PER_CHIP - 1
+    # Python unrolling forces XLA to inline SVD, bypassing lax.scan and Auto-SPMD bugs
+    for idx in range(start_idx, limit, 2):
+        site1 = local_tensors[idx]
+        site2 = local_tensors[idx + 1]
         
-        # Loop unrolling prevents control flow (lax.scan) collisions with SVD
-        for idx in range(start_idx, limit, 2):
-            site1 = local_tensors[idx]
-            site2 = local_tensors[idx + 1]
-            
-            fused = jnp.einsum("ijk,klm->ijlm", site1, site2)
-            transformed = jnp.einsum("abcd,ibcj->iadj", gate_u, fused)
-            
-            mat = transformed.reshape((CHI * 2, 2 * CHI))
-            u, s, vh = jnp.linalg.svd(mat, full_matrices=False)
-            
-            s_norm = s / jnp.linalg.norm(s)
-            s_sq = jnp.square(s_norm) + 1e-12 
-            entropy = -jnp.sum(s_sq * jnp.log2(s_sq))
-            
-            new_site1 = u[:, :CHI].reshape((CHI, 2, CHI))
-            new_site2 = (jnp.diag(s[:CHI]) @ vh[:CHI, :]).reshape((CHI, 2, CHI))
-            
-            local_tensors = local_tensors.at[idx].set(new_site1)
-            local_tensors = local_tensors.at[idx + 1].set(new_site2)
-            entropies_list.append(entropy)
+        fused = jnp.einsum("ijk,klm->ijlm", site1, site2)
+        transformed = jnp.einsum("abcd,ibcj->iadj", gate_u, fused)
+        
+        mat = transformed.reshape((CHI * 2, 2 * CHI))
+        u, s, vh = jnp.linalg.svd(mat, full_matrices=False)
+        
+        s_norm = s / jnp.linalg.norm(s)
+        s_sq = jnp.square(s_norm) + 1e-12 
+        entropy = -jnp.sum(s_sq * jnp.log2(s_sq))
+        
+        new_site1 = u[:, :CHI].reshape((CHI, 2, CHI))
+        new_site2 = (jnp.diag(s[:CHI]) @ vh[:CHI, :]).reshape((CHI, 2, CHI))
+        
+        local_tensors = local_tensors.at[idx].set(new_site1)
+        local_tensors = local_tensors.at[idx + 1].set(new_site2)
+        entropies_list.append(entropy)
 
-        mean_entropy = jnp.mean(jnp.stack(entropies_list))
-        return local_tensors, mean_entropy[None]
-
-    # Replaced shard_map with vmap to bypass internal SVD VMA tracking bugs.
-    new_reshaped_mps, entropies = jax.vmap(chip_sweep)(reshaped_mps)
-    
-    # Flatten back to global distributed state
-    new_mps = new_reshaped_mps.reshape((TOTAL_QUBITS, CHI, 2, CHI))
-    
-    # Explicitly enforce the original sharding using the bound NamedSharding
-    new_mps = jax.lax.with_sharding_constraint(new_mps, TPU_SHARDING)
-    
-    return new_mps, entropies
+    return local_tensors, jnp.mean(jnp.stack(entropies_list))
 
 # ─────────────────────────────────────────────────────────────────────────────
-# 4. DIFFERENTIABLE AUTODIFF ENGINE (LOOP UNROLLED)
+# 4. DIFFERENTIABLE AUTODIFF ENGINE (PMAP REDUCTION)
 # ─────────────────────────────────────────────────────────────────────────────
-@jax.jit
-def evaluate_vqe_energy(theta, initial_mps):
-    gate_u = get_parametric_su4_gate(theta)
-    mps, ent_even = apply_local_layer(initial_mps, gate_u, "even")
-    mps, ent_odd  = apply_local_layer(mps, gate_u, "odd")
+# We map over the 16 devices (axis 0 of local_mps), while broadcasting theta (None)
+@jax.pmap(axis_name='dev', in_axes=(None, 0))
+def vqe_grad_engine(theta, local_mps):
     
-    @jax.jit
-    def measure_local_z(local_tensors):
+    def evaluate_local_energy(t, mps):
+        gate_u = get_parametric_su4_gate(t)
+        mps, ent_even = apply_local_layer(mps, gate_u, "even")
+        mps, ent_odd  = apply_local_layer(mps, gate_u, "odd")
+        
         total_z = 0.0
-        # Python unrolling to prevent lax.scan accumulator type collisions
         for idx in range(QUBITS_PER_CHIP):
-            tensor = local_tensors[idx]
+            tensor = mps[idx]
             rho_local = jnp.einsum("ijk,ilk->jl", tensor, jnp.conj(tensor))
             z_exp = jnp.real(jnp.trace(rho_local @ Z_MAT))
             total_z = total_z + z_exp
             
-        return jnp.array(total_z, dtype=jnp.float32)[None]
+        mean_entropy = (ent_even + ent_odd) / 2.0
+        return total_z, (mps, mean_entropy)
 
-    local_energies = shard_map(measure_local_z, TPU_MESH, in_specs=P_SPEC, out_specs=PartitionSpec('dev'))(mps)
-    global_energy = jnp.sum(local_energies) / TOTAL_QUBITS
+    # Differentiate the local chunk of the circuit
+    grad_fn = jax.value_and_grad(evaluate_local_energy, argnums=0, has_aux=True)
+    (local_z, (new_local_mps, local_ent)), local_grad = grad_fn(theta, local_mps)
     
-    mean_entropy = (jnp.mean(ent_even) + jnp.mean(ent_odd)) / 2.0
-    return global_energy, (mps, mean_entropy)
-
-vqe_grad_engine = jax.jit(jax.value_and_grad(evaluate_vqe_energy, argnums=0, has_aux=True))
+    # Hardware-native Cross-TPU AllReduce reductions (bypasses Auto-SPMD partitioner)
+    global_z = jax.lax.psum(local_z, axis_name='dev') / TOTAL_QUBITS
+    global_grad = jax.lax.psum(local_grad, axis_name='dev') / TOTAL_QUBITS
+    global_ent = jax.lax.pmean(local_ent, axis_name='dev')
+    
+    return global_z, global_grad, new_local_mps, global_ent
 
 # ─────────────────────────────────────────────────────────────────────────────
 # 5. DATA EXPORT (PLOTS & TXT)
@@ -219,30 +195,41 @@ def export_research_artifacts(metrics, ts):
 # ─────────────────────────────────────────────────────────────────────────────
 if __name__ == "__main__":
     print(f"============================================================")
-    print(f"🚀 VQE 1,024-Qubit MPS Initialize")
+    print(f"🚀 VQE 1,024-Qubit MPS Initialize (pmap Architecture)")
     print(f"   Target : {NUM_DEVICES} Cores (v5e-16) │ {TOTAL_QUBITS} Qubits")
     print(f"============================================================")
 
-    mps_state = initialize_mps()
+    # Initialize 16 isolated states across the chips
+    mps_state = initialize_local_mps(jnp.arange(NUM_DEVICES))
     mps_state.block_until_ready()
-    theta = jnp.array(0.85, dtype=jnp.float32)
+    
+    # Initialize theta as a complex scalar to bypass the JAX ComplexWarning
+    theta = jnp.array(0.85, dtype=jnp.complex64)
     metrics = {"energy": [], "grad_norm": [], "entropy": [], "time_ms": []}
 
     print("\nStarting Training Loop...")
     for epoch in range(EPOCHS):
         t0 = time.perf_counter()
         
-        (energy, (updated_mps, entropy)), grad = vqe_grad_engine(theta, mps_state)
-        energy.block_until_ready()
+        # pmap executes in parallel and returns arrays of identical sums across the 16 cores
+        global_z, global_grad, updated_mps, global_ent = vqe_grad_engine(theta, mps_state)
+        global_z.block_until_ready()
         
         t_ms = (time.perf_counter() - t0) * 1000
-        theta = theta - LEARNING_RATE * grad
         
-        metrics["energy"].append(float(energy))
-        metrics["grad_norm"].append(float(jnp.abs(grad)))
-        metrics["entropy"].append(float(entropy))
+        # All 16 devices hold the exact same global values, so we just slice index [0]
+        energy = float(jnp.real(global_z[0]))
+        grad_val = float(jnp.real(global_grad[0]))
+        entropy = float(jnp.real(global_ent[0]))
+        
+        theta = theta - LEARNING_RATE * grad_val
+        mps_state = updated_mps 
+        
+        metrics["energy"].append(energy)
+        metrics["grad_norm"].append(abs(grad_val))
+        metrics["entropy"].append(entropy)
         metrics["time_ms"].append(t_ms)
         
-        print(f"Epoch {epoch:<3} | E: {float(energy):<9.5f} | Grad: {float(jnp.abs(grad)):<8.5f} | Time: {t_ms:.1f} ms")
+        print(f"Epoch {epoch:<3} | E: {energy:<9.5f} | Grad: {abs(grad_val):<8.5f} | Time: {t_ms:.1f} ms")
 
     export_research_artifacts(metrics, TS)
