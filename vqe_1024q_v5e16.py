@@ -8,8 +8,8 @@
   Bond Dimension : χ = 128 (Mapped precisely to TPU MXU Systolic Arrays)
   Outputs        : Dashboard (.png) and Research Report (.txt)
   
-  FIXED: Numerical instability (NaN) bug resolved via SVD epsilon floors
-         and global gradient clipping.
+  FIXED: Numerical instability (NaN) bug resolved via SVD epsilon floors.
+         Fixed Complex Clipping ValueError by separating real components.
 ================================================================================
 """
 
@@ -131,7 +131,6 @@ def _vqe_grad_engine_impl(theta, local_mps):
     
     def evaluate_local_energy(t):
         gate_u = get_parametric_su4_gate(t)
-        # Note: We trace local operations while avoiding overriding closure references
         mps_even, ent_even = apply_local_layer(local_mps, gate_u, "even")
         mps_odd, ent_odd  = apply_local_layer(mps_even, gate_u, "odd")
         
@@ -149,8 +148,10 @@ def _vqe_grad_engine_impl(theta, local_mps):
     grad_fn = jax.value_and_grad(evaluate_local_energy, argnums=0, has_aux=True)
     (local_z, (new_local_mps, local_ent)), local_grad = grad_fn(theta)
     
-    # HARDWARE-LEVEL GRADIENT CLIPPING: Prevents out-of-bound jumps from corrupting theta
-    local_grad = jnp.clip(local_grad, -1.0, 1.0)
+    # HARDWARE-LEVEL GRADIENT CLIPPING: Safely handle complex output types by clipping real components
+    real_grad = jnp.real(local_grad)
+    clipped_real_grad = jnp.clip(real_grad, -1.0, 1.0)
+    local_grad = clipped_real_grad.astype(jnp.complex64)
     
     # Hardware-native Cross-TPU AllReduce reductions across ALL 16 chips
     global_z = jax.lax.psum(local_z, axis_name='dev') / TOTAL_QUBITS
@@ -245,7 +246,7 @@ if __name__ == "__main__":
     mps_state = initialize_local_mps(global_device_indices)
     mps_state.block_until_ready()
     
-    # Ensure parameter matches the precision pattern precisely
+    # Ensure parameter matches precision pattern precisely
     theta = jnp.array(0.85, dtype=jnp.complex64)
     metrics = {"energy": [], "grad_norm": [], "entropy": [], "time_ms": []}
 
@@ -266,7 +267,6 @@ if __name__ == "__main__":
         grad_val = float(jnp.real(global_grad[0]))
         entropy = float(jnp.real(global_ent[0]))
         
-        # Protective tracking to ensure loop terminates elegantly if system collapses beforehand
         if np.isnan(energy) or np.isnan(grad_val):
             if jax.process_index() == 0:
                 print(f"🛑 Training aborted early at epoch {epoch}: NaNs detected.")
@@ -283,6 +283,6 @@ if __name__ == "__main__":
         if jax.process_index() == 0:
             print(f"Epoch {epoch:<3} | E: {energy:<9.5f} | Grad: {abs(grad_val):<8.5f} | Time: {t_ms:.1f} ms")
 
-    # Only attempt to save files if training logged valid metrics steps
     if len(metrics["energy"]) > 0:
         export_research_artifacts(metrics, TS)
+      
