@@ -1,21 +1,33 @@
 # ==========================================
-# 0. NUMPY 2.0+ HOTFIX & ENVIRONMENT CONFIG
+# 0. NUMPY 2.0+ LEGACY COMPATIBILITY PATCHES
 # ==========================================
 import numpy as np
+import math
 import os
 import sys
 
-# Patch missing legacy attribute in NumPy 2.0
+# Hotfix 1: Patch missing legacy ComplexWarning attribute in NumPy 2.0
 if not hasattr(np, "ComplexWarning"):
     import numpy.exceptions
     np.ComplexWarning = numpy.exceptions.ComplexWarning
+
+# Hotfix 2: Patch np.log2 to safely handle plain/large Python ints under NumPy 2.0
+_orig_log2 = np.log2
+def _safe_log2(x):
+    if isinstance(x, (int, float)):
+        return math.log2(x)
+    try:
+        return _orig_log2(x)
+    except Exception:
+        return math.log2(float(x))
+np.log2 = _safe_log2
 
 # Direct XLA to pool multi-chip topologies
 os.environ["JAX_PLATFORMS"] = "tpu,cpu"
 os.environ["XLA_FLAGS"] = "--xla_disable_hlo_passes=false"
 
 # ==========================================
-# 1. CRITICAL: IMPORT JAX & INITIALIZE CLUSTER
+# 1. IMPORT JAX & INITIALIZE CLUSTER
 # ==========================================
 import jax
 
