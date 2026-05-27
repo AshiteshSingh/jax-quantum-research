@@ -41,9 +41,9 @@ jax.block_until_ready(state)
 print("State vector successfully sharded across TPU HBM pools.")
 
 # -------------------------------------------------------------------------
-# 3. FAST-COMPILING RANK-3 & RANK-5 GATE OPERATORS
+# 3. MEMORY-DONATED ZERO-COPY GATE OPERATORS (FAST COMPILATION)
 # -------------------------------------------------------------------------
-@functools.partial(jax.jit, static_argnums=2)
+@functools.partial(jax.jit, static_argnums=2, donate_argnums=0)
 def apply_1q_gate(state_vec, gate_matrix, target):
     """Applies a 1-qubit gate using high-performance tensor contraction."""
     left_dim = 1 << target
@@ -53,43 +53,38 @@ def apply_1q_gate(state_vec, gate_matrix, target):
     tensor = jnp.einsum('ij,ajb->aib', gate_matrix, tensor)
     return tensor.reshape((-1,))
 
-@functools.partial(jax.jit, static_argnums=(1, 2))
+@functools.partial(jax.jit, static_argnums=(1, 2), donate_argnums=0)
 def apply_cnot(state_vec, control, target):
-    """Applies a CNOT gate using an explicit low-rank matrix contraction."""
-    X_gate = jnp.array([[0.0, 1.0], [1.0, 0.0]], dtype=jnp.complex64)
+    """
+    Applies a CNOT gate using a single multi-dimensional tensor contraction.
+    Eliminates slicing and stacking to enforce zero-copy buffer reuse.
+    """
+    # Construct CNOT as a rank-4 tensor layout: (out_control, out_target, in_control, in_target)
+    cnot_tensor = jnp.array([
+        [[[1, 0], [0, 0]], [[0, 1], [0, 0]]],
+        [[[0, 0], [0, 1]], [[0, 0], [1, 0]]]
+    ], dtype=jnp.complex64)
     
     if control < target:
         dim1 = 1 << control
-        dim2 = 2  # control axis
         dim3 = 1 << (target - control - 1)
-        dim4 = 2  # target axis
         dim5 = 1 << (NUM_QUBITS - target - 1)
         
-        tensor = state_vec.reshape((dim1, dim2, dim3, dim4, dim5))
-        c0 = tensor[:, 0, :, :, :]
-        c1 = tensor[:, 1, :, :, :]
-        
-        # Contract X gate directly onto the target qubit dimension (axis 2 of c1)
-        c1_flipped = jnp.einsum('ij,abcd->abid', X_gate, c1)
-        
-        combined = jnp.stack([c0, c1_flipped], axis=1)
-        return combined.reshape((-1,))
+        # Reshape into 5 core relational dimensions
+        tensor = state_vec.reshape((dim1, 2, dim3, 2, dim5))
+        # Contract directly over control (axis 1) and target (axis 3)
+        tensor = jnp.einsum('CTct,acbtd->aCbTd', cnot_tensor, tensor)
+        return tensor.reshape((-1,))
     else:
         dim1 = 1 << target
-        dim2 = 2  # target axis
         dim3 = 1 << (control - target - 1)
-        dim4 = 2  # control axis
         dim5 = 1 << (NUM_QUBITS - control - 1)
         
-        tensor = state_vec.reshape((dim1, dim2, dim3, dim4, dim5))
-        c0 = tensor[:, :, :, 0, :]
-        c1 = tensor[:, :, :, 1, :]
-        
-        # Contract X gate directly onto the target qubit dimension (axis 1 of c1)
-        c1_flipped = jnp.einsum('ij,abcd->aicd', X_gate, c1)
-        
-        combined = jnp.stack([c0, c1_flipped], axis=3)
-        return combined.reshape((-1,))
+        # Reshape where target appears before control in memory layout
+        tensor = state_vec.reshape((dim1, 2, dim3, 2, dim5))
+        # Contract directly over target (axis 1) and control (axis 3)
+        tensor = jnp.einsum('CTct,atbcd->aTbCd', cnot_tensor, tensor)
+        return tensor.reshape((-1,))
 
 # -------------------------------------------------------------------------
 # 4. BENCHMARKING RUN & PERFORMANCE MONITORING
@@ -100,11 +95,11 @@ Hadamard = jnp.array([[1.0, 1.0], [1.0, -1.0]], dtype=jnp.complex64) / jnp.sqrt(
 qubit_latencies = []
 gate_depth_times = []
 
+# Overwrite references immediately in the warm-up to free up memory channels
 print("Compiling XLA graph (Warm-up run)...")
-tmp = apply_1q_gate(state, Hadamard, 2)
-tmp = apply_cnot(tmp, 2, 5)
-jax.block_until_ready(tmp)
-del tmp
+state = apply_1q_gate(state, Hadamard, 2)
+state = apply_cnot(state, 2, 5)
+jax.block_until_ready(state)
 print("Compilation complete. Executing benchmark...")
 
 start_total = time.perf_counter()
