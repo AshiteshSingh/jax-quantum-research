@@ -12,7 +12,8 @@ if not hasattr(np, "ComplexWarning"):
 
 # Direct XLA to pool multi-chip topologies and aggressively fuse memory loops
 os.environ["JAX_PLATFORMS"] = "tpu,cpu"
-os.environ["XLA_FLAGS"] = "--xla_tpu_coalesce_loops=true --xla_disable_hlo_passes=false"
+# NEW FIXED LINE
+os.environ["XLA_FLAGS"] = "--xla_disable_hlo_passes=false"
 
 import time
 import matplotlib.pyplot as plt
