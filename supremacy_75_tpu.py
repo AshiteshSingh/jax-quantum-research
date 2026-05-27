@@ -1,24 +1,15 @@
 # ==========================================
-# 0. NUMPY 2.0+ LEGACY COMPATIBILITY PATCHES
+# 0. SAFE ENVIRONMENT OVERRIDES
 # ==========================================
 import numpy as np
 import math
 import os
 import sys
 
+# Patch missing legacy ComplexWarning attribute (Safe to do early)
 if not hasattr(np, "ComplexWarning"):
     import numpy.exceptions
     np.ComplexWarning = numpy.exceptions.ComplexWarning
-
-_orig_log2 = np.log2
-def _safe_log2(x):
-    if isinstance(x, (int, float)):
-        return math.log2(x)
-    try:
-        return _orig_log2(x)
-    except Exception:
-        return math.log2(float(x))
-np.log2 = _safe_log2
 
 os.environ["JAX_PLATFORMS"] = "tpu,cpu"
 os.environ["XLA_FLAGS"] = "--xla_disable_hlo_passes=false"
@@ -26,6 +17,7 @@ os.environ["XLA_FLAGS"] = "--xla_disable_hlo_passes=false"
 # ==========================================
 # 1. IMPORT JAX & INITIALIZE CLUSTER
 # ==========================================
+# JAX and ml_dtypes initialize here with a 100% untouched, pristine NumPy!
 import jax
 
 try:
@@ -42,7 +34,22 @@ import time
 import matplotlib.pyplot as plt
 
 # ==========================================
-# 2. INITIALIZATION & HARDWARE COUPLING
+# 2. POST-INITIALIZATION NUMPY 2.0 PATCH
+# ==========================================
+# Now that the binary C-extensions are safely loaded into memory, 
+# we can safely intercept np.log2 to protect TensorCircuit's graph compiler.
+_orig_log2 = np.log2
+def _safe_log2(x):
+    if isinstance(x, (int, float)):
+        return math.log2(x)
+    try:
+        return _orig_log2(x)
+    except Exception:
+        return math.log2(float(x))
+np.log2 = _safe_log2
+
+# ==========================================
+# 3. INITIALIZATION & HARDWARE COUPLING
 # ==========================================
 def initialize_engine():
     is_master = (jax.process_index() == 0)
@@ -59,7 +66,7 @@ def initialize_engine():
         print(f"[SYSTEM] Local TPU Chips Per Host: {jax.local_device_count()}")
 
 # ==========================================
-# 3. 75-QUBIT 2D GRID LATTICE GEOMETRY
+# 4. 75-QUBIT 2D GRID LATTICE GEOMETRY
 # ==========================================
 N_QUBITS = 75
 GRID_ROWS, GRID_COLS = 9, 9
@@ -81,7 +88,7 @@ def build_75_qubit_grid():
 LATTICE_EDGES = build_75_qubit_grid()
 
 # ==========================================
-# 4. EXTREME CHAOS WAVE MECHANICS (RCS)
+# 5. EXTREME CHAOS WAVE MECHANICS (RCS)
 # ==========================================
 def build_chaotic_circuit(gate_parameters, depth=20):
     c = tc.Circuit(N_QUBITS)
@@ -99,7 +106,7 @@ def build_chaotic_circuit(gate_parameters, depth=20):
     return c
 
 # ==========================================
-# 5. PROTECTIVE TENSOR SLICING (MEMORY SAFEGUARD)
+# 6. PROTECTIVE TENSOR SLICING (MEMORY SAFEGUARD)
 # ==========================================
 opt = ctg.ReusableHyperOptimizer(
     methods=["greedy"],
@@ -113,39 +120,31 @@ if jax.process_index() == 0:
     print("[SYSTEM] Memory protection armor initialized via Cotengra Slicing.")
 
 # ==========================================
-# 6. MULTI-CHIP SHARDING ENGINE (vmap + pmap)
+# 7. MULTI-CHIP SHARDING ENGINE (vmap + pmap)
 # ==========================================
 def get_amplitude_probability(gate_parameters, target_bitstring):
     circuit = build_chaotic_circuit(gate_parameters)
     amplitude = circuit.amplitude(target_bitstring)
     return jnp.real(amplitude * jnp.conj(amplitude))
 
-# 1. vmap handles the batching ON a single chip (e.g., 4 tasks per chip)
 single_chip_batcher = jax.vmap(get_amplitude_probability, in_axes=(None, 0))
-
-# 2. pmap distributes the vectorized batches ACROSS the local chips on the host
 parallel_tpu_driver = jax.pmap(single_chip_batcher, in_axes=(None, 0))
 
 # ==========================================
-# 7. BENCHMARKING & METRIC PLOTTING
+# 8. BENCHMARKING & METRIC PLOTTING
 # ==========================================
 def run_pipeline():
     initialize_engine()
     is_master = (jax.process_index() == 0)
     
-    # Give each host a slightly different random seed so the 64 states are all unique
     key = jax.random.PRNGKey(2026 + jax.process_index())
     total_needed_weights = N_QUBITS * 2 * 20
     chaotic_angles = jax.random.uniform(key, shape=(total_needed_weights,), minval=0, maxval=2*jnp.pi)
     
-    # -------------------------------------------------------------
-    # THE MULTI-HOST SHAPE FIX
-    # -------------------------------------------------------------
-    local_chips = jax.local_device_count()  # This will be 4 on your v5litepod
-    tasks_per_chip = 4                      # 4 bitstrings processed per chip
-    global_states_computed = jax.device_count() * tasks_per_chip # 16 * 4 = 64
+    local_chips = jax.local_device_count() 
+    tasks_per_chip = 4                      
+    global_states_computed = jax.device_count() * tasks_per_chip 
     
-    # Shape MUST be (4 chips, 4 tasks, 75 qubits) to satisfy multi-host pmap
     target_bitstrings = jax.random.randint(
         key, 
         shape=(local_chips, tasks_per_chip, N_QUBITS), 
