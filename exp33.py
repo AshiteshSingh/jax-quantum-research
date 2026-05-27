@@ -5,7 +5,6 @@ import jax
 import jax.numpy as jnp
 from jax.sharding import Mesh, PartitionSpec as P, NamedSharding
 from jax.experimental import mesh_utils
-from jax.experimental.shard_map import shard_map
 import matplotlib.pyplot as plt
 import numpy as np
 
@@ -23,105 +22,93 @@ state_sharding = NamedSharding(mesh, P('chips'))
 
 NUM_QUBITS = 33
 STATE_SIZE = 1 << NUM_QUBITS  # 2^33 elements
+LOCAL_SIZE = STATE_SIZE // 4
 
-print(f"Allocating 33-qubit state vector ({STATE_SIZE * 8 / 1e9:.2f} GB) collectively across {num_devices} chips...")
+print(f"Allocating 33-qubit state vector ({STATE_SIZE * 8 / 1e9:.2f} GB) via Host Streaming...")
 
 # -------------------------------------------------------------------------
-# 2. ZERO-OVERHEAD DISTRIBUTED ALLOCATION USING SHARD_MAP
+# 2. ZERO-OVERHEAD STREAMING FROM HOST TO CHIPS (OOM SOLUTION)
 # -------------------------------------------------------------------------
-# Create a small driver array distributed across the 4 chips to anchor the shard_map
-dummy_driver = jnp.arange(4)
-dummy_driver = jax.device_put(dummy_driver, NamedSharding(mesh, P('chips')))
+t_init_start = time.perf_counter()
 
-@functools.partial(shard_map, mesh=mesh, in_specs=P('chips'), out_specs=P('chips'))
-def create_pure_sharded_state(chip_id):
-    # This code executes locally within each chip's boundary.
-    # Local shape is explicitly 1/4th of the global state (16 GB per chip).
-    local_size = STATE_SIZE // 4
-    local_vec = jnp.zeros((local_size,), dtype=jnp.complex64)
-    
-    # Only the first chip (chip_id == 0) sets its local index 0 to 1.0
-    first_val = jnp.where(chip_id == 0, 1.0 + 0.0j, 0.0 + 0.0j)
-    return local_vec.at[0].set(first_val)
+# Allocate a single 16 GiB chunk on host CPU RAM
+print("Allocating 16 GiB buffer on Host CPU RAM...")
+host_buffer = np.zeros((LOCAL_SIZE,), dtype=np.complex64)
 
-# Execute the zero-overhead allocation map
-state = create_pure_sharded_state(dummy_driver)
+dev_arrays = []
+
+# Prepare data for Chip 0 (contains the |00...0> ground state component)
+print("Streaming Shard 0 to TPU Chip 0...")
+host_buffer[0] = 1.0 + 0.0j
+dev_arrays.append(jax.device_put(host_buffer, devices[0]))
+
+# Prepare data for Chips 1, 2, and 3 (pure zeros)
+host_buffer[0] = 0.0 + 0.0j
+for i in range(1, 4):
+    print(f"Streaming Shard {i} to TPU Chip {i}...")
+    dev_arrays.append(jax.device_put(host_buffer, devices[i]))
+
+# Force clear host memory reference
+del host_buffer
+
+# Stitch the 4 isolated device allocations into one unified global sharded array
+state = jax.make_array_from_single_device_arrays(
+    shape=(STATE_SIZE,),
+    sharding=state_sharding,
+    arrays=dev_arrays
+)
 jax.block_until_ready(state)
-
-print("State vector successfully sharded across TPU HBM pools with zero host overhead.")
+print(f"State vector successfully loaded into TPU HBM pools. Time taken: {time.perf_counter() - t_init_start:.2f}s")
 
 # -------------------------------------------------------------------------
-# 3. HIGH-PERFORMANCE GATE OPERATIONS (JIT-COMPILED GSPMD)
+# 3. IN-PLACE MEMORY-DONATED GATE OPERATIONS
 # -------------------------------------------------------------------------
-@jax.jit
+# By using donate_argnums=0, we tell XLA it can safely destroy/overwrite the
+# incoming state_vec buffer, ensuring zero-copy mutations during execution.
+@functools.partial(jax.jit, static_argnums=2, donate_argnums=0)
 def apply_1q_gate(state_vec, gate_matrix, target):
-    """
-    Applies an arbitrary 1-qubit gate using hardware-accelerated tensor contractions.
-    XLA GSPMD automatically injects 800 GB/s ICI AllToAll collectives for targets < 2.
-    """
-    left_dim = 1 << target
-    right_dim = 1 << (NUM_QUBITS - target - 1)
-    
-    # Reshape to isolate target dimension
-    tensor = state_vec.reshape((left_dim, 2, right_dim))
-    # Contract gate matrix along target axis
-    tensor = jnp.einsum('ij,ajb->aib', gate_matrix, tensor)
+    tensor = state_vec.reshape((2,) * NUM_QUBITS)
+    tensor = jnp.moveaxis(tensor, target, 0)
+    tensor = jnp.einsum('ij,j...->i...', gate_matrix, tensor)
+    tensor = jnp.moveaxis(tensor, 0, target)
     return tensor.reshape((-1,))
 
-@jax.jit
-def _apply_x_local(sub_state, target_idx, total_bits):
-    left = 1 << target_idx
-    right = 1 << (total_bits - target_idx - 1)
-    tensor = sub_state.reshape((left, 2, right))
-    X_gate = jnp.array([[0.0, 1.0], [1.0, 0.0]], dtype=jnp.complex64)
-    tensor = jnp.einsum('ij,ajb->aib', X_gate, tensor)
-    return tensor.reshape((-1,))
-
-@jax.jit
+@functools.partial(jax.jit, static_argnums=(2, 3), donate_argnums=0)
 def apply_cnot(state_vec, control, target):
-    """
-    Applies a CNOT gate via targeted subspace masking to eliminate redundant operations.
-    """
-    left_c = 1 << control
-    right_c = 1 << (NUM_QUBITS - control - 1)
-    tensor = state_vec.reshape((left_c, 2, right_c))
+    tensor = state_vec.reshape((2,) * NUM_QUBITS)
+    tensor = jnp.moveaxis(tensor, (control, target), (0, 1))
     
-    # Split into control=0 (Identity) and control=1 (Apply X) paths
-    state_c0 = tensor[:, 0, :]
-    state_c1 = tensor[:, 1, :]
+    # Construct CNOT tensor mapping (out_ctrl, out_tgt, in_ctrl, in_tgt)
+    cnot_matrix = jnp.zeros((2, 2, 2, 2), dtype=jnp.complex64)
+    cnot_matrix = cnot_matrix.at[0, 0, 0, 0].set(1.0)
+    cnot_matrix = cnot_matrix.at[0, 1, 0, 1].set(1.0)
+    cnot_matrix = cnot_matrix.at[1, 1, 1, 0].set(1.0)
+    cnot_matrix = cnot_matrix.at[1, 0, 1, 1].set(1.0)
     
-    # Calculate target index offset relative to the extracted control bit
-    relative_target = target - 1 if target > control else target
-    state_c1_flipped = _apply_x_local(state_c1, relative_target, NUM_QUBITS - 1)
-    
-    # Reassemble tracking components
-    state_c0 = state_c0.reshape((left_c, right_c))
-    state_c1_flipped = state_c1_flipped.reshape((left_c, right_c))
-    
-    combined = jnp.stack([state_c0, state_c1_flipped], axis=1)
-    return combined.reshape((-1,))
+    tensor = jnp.einsum('abcd,cd...->ab...', cnot_matrix, tensor)
+    tensor = jnp.moveaxis(tensor, (0, 1), (control, target))
+    return tensor.reshape((-1,))
 
 # -------------------------------------------------------------------------
 # 4. BENCHMARKING RUN & PERFORMANCE MONITORING
 # -------------------------------------------------------------------------
 print("\nStarting Benchmark Circuit...")
 
-# Define Standard Gate Operators
 Hadamard = jnp.array([[1.0, 1.0], [1.0, -1.0]], dtype=jnp.complex64) / jnp.sqrt(2.0)
 
 qubit_latencies = []
 gate_depth_times = []
 
-# Warm-up to trigger XLA compilation (excluded from final metrics)
 print("Compiling XLA graph (Warm-up run)...")
-tmp = apply_1q_gate(state, Hadamard, 0)
-tmp = apply_cnot(tmp, 0, 5)
+tmp = apply_1q_gate(state, Hadamard, 2)
+tmp = apply_cnot(tmp, 2, 5)
 jax.block_until_ready(tmp)
+del tmp
 print("Compilation complete. Executing benchmark...")
 
 start_total = time.perf_counter()
 
-# Run a sequence of 1-Qubit gates across all qubits to measure interconnect variance
+# Run a sequence of 1-Qubit gates across all qubits
 for q in range(NUM_QUBITS):
     t0 = time.perf_counter()
     state = apply_1q_gate(state, Hadamard, q)
@@ -154,7 +141,6 @@ print(f"\nSimulation complete. Total circuit execution time: {end_total - start_
 print("\nGenerating performance diagnostic plots...")
 os.makedirs("metrics", exist_ok=True)
 
-# Plot 1: Gate Latency Profiles Across Qubits
 plt.figure(figsize=(10, 5))
 plt.bar(range(NUM_QUBITS), qubit_latencies, color='royalblue', edgecolor='black', alpha=0.85)
 plt.axvline(x=1.5, color='crimson', linestyle='--', linewidth=2, label='Distributed Interconnect Boundary')
@@ -167,7 +153,6 @@ plt.tight_layout()
 plt.savefig("metrics/qubit_latency_profile.png", dpi=300)
 plt.close()
 
-# Plot 2: Total Execution Scalability Curve
 plt.figure(figsize=(10, 5))
 plt.plot(range(1, len(gate_depth_times) + 1), gate_depth_times, marker='o', color='forestgreen', linewidth=2)
 plt.title("Total Simulation Run Time vs. Gate Depth", fontsize=14, fontweight='bold')
@@ -178,6 +163,4 @@ plt.tight_layout()
 plt.savefig("metrics/runtime_scaling.png", dpi=300)
 plt.close()
 
-print("Performance graphs successfully generated and saved to the 'metrics/' folder:")
-print(" - metrics/qubit_latency_profile.png")
-print(" - metrics/runtime_scaling.png")
+print("Performance graphs successfully generated and saved to the 'metrics/' folder.")
