@@ -6,12 +6,10 @@ import math
 import os
 import sys
 
-# Hotfix 1: Patch missing legacy ComplexWarning attribute in NumPy 2.0
 if not hasattr(np, "ComplexWarning"):
     import numpy.exceptions
     np.ComplexWarning = numpy.exceptions.ComplexWarning
 
-# Direct XLA to pool multi-chip topologies
 os.environ["JAX_PLATFORMS"] = "tpu,cpu"
 os.environ["XLA_FLAGS"] = "--xla_disable_hlo_passes=false"
 
@@ -52,7 +50,7 @@ def initialize_engine():
     is_master = (jax.process_index() == 0)
     if is_master:
         print("====================================================")
-        print("INITIATING 40-QUBIT HIGH-STABILITY ENGINE")
+        print("INITIATING 40-QUBIT ULTRA-STABILITY CHAIN ENGINE")
         print("====================================================")
     
     tc.set_backend("jax")
@@ -63,23 +61,16 @@ def initialize_engine():
         print(f"[SYSTEM] Local TPU Chips Per Host: {jax.local_device_count()}")
 
 # ==========================================
-# 4. 40-QUBIT LATTICE GEOMETRY
+# 4. 40-QUBIT 1D CHAIN LATTICE GEOMETRY
 # ==========================================
 N_QUBITS = 40
-GRID_ROWS, GRID_COLS = 5, 8  # 5x8 dense rectangular mesh = 40 qubits
 
-def build_40_qubit_grid():
-    valid_positions = list(range(GRID_ROWS * GRID_COLS))
-    edges = []
-    for pos in valid_positions:
-        r, c = divmod(pos, GRID_COLS)
-        if c + 1 < GRID_COLS:
-            edges.append((pos, pos + 1))
-        if r + 1 < GRID_ROWS:
-            edges.append((pos, pos + GRID_COLS))
+def build_40_qubit_chain():
+    """Connects 40 qubits sequentially in a line to keep the tensor rank ultra-low."""
+    edges = [(i, i + 1) for i in range(N_QUBITS - 1)]
     return edges
 
-LATTICE_EDGES = build_40_qubit_grid()
+LATTICE_EDGES = build_40_qubit_chain()
 
 # ==========================================
 # 5. EXTREME CHAOS WAVE MECHANICS (RCS)
@@ -95,17 +86,16 @@ def build_chaotic_circuit(gate_parameters, depth=20):
             param_idx += 2
             
         for idx, (q1, q2) in enumerate(LATTICE_EDGES):
-            if (layer + idx) % 4 == 0:
+            if (layer + idx) % 2 == 0:  # Optimized alternating 1D layer pattern
                 c.cz(q1, q2)
     return c
 
 # ==========================================
-# 6. HIGH-STABILITY AUTOMATED CONTRACTOR
+# 6. HIGH-SPEED NATIVE CONTRACTOR
 # ==========================================
-# Switching to 'auto' avoids fragmentation that overflows XLA layout engines
 tc.set_contractor("auto")
 if jax.process_index() == 0:
-    print("[SYSTEM] High-stability native contractor activated.")
+    print("[SYSTEM] High-speed native contractor activated.")
 
 # ==========================================
 # 7. MULTI-CHIP SHARDING ENGINE (vmap + pmap)
@@ -130,7 +120,7 @@ def run_pipeline():
     chaotic_angles = jax.random.uniform(key, shape=(total_needed_weights,), minval=0, maxval=2*jnp.pi)
     
     local_chips = jax.local_device_count() 
-    tasks_per_chip = 4  # Safe batch size to watch the engine clear compilation tracks
+    tasks_per_chip = 32  # Cranked up to 32 to saturate the processors
     global_states_computed = jax.device_count() * tasks_per_chip 
     
     target_bitstrings = jax.random.randint(
@@ -154,7 +144,7 @@ def run_pipeline():
             print(f"[SUCCESS] 40-Qubit circuit compiled to bare-metal XLA in {compile_overhead:.2f} seconds.\n")
     except RuntimeError as e:
         if is_master:
-            print(f"\n[CRITICAL ERROR] Compile pipeline tracking caught an unrecoverable exception: {e}")
+            print(f"\n[CRITICAL ERROR] Compile pipeline failed: {e}")
         sys.exit(1)
         
     if is_master:
@@ -205,7 +195,7 @@ def run_pipeline():
         
         plt.tight_layout()
         plt.savefig('tpu_40qubit_performance.png', dpi=300)
-        print("[SUCCESS] Graphics rendered perfectly. Open `tpu_40qubit_performance.png` to view metrics.")
+        print("[SUCCESS] Graphs rendered perfectly. Open `tpu_40qubit_performance.png` to view metrics.")
         print("====================================================")
 
 if __name__ == "__main__":
