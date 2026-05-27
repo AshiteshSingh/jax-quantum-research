@@ -18,26 +18,23 @@ os.environ["XLA_FLAGS"] = "--xla_disable_hlo_passes=false"
 # ==========================================
 # 1. IMPORT JAX & INITIALIZE CLUSTER
 # ==========================================
-# JAX and ml_dtypes initialize here with a clean NumPy pointer
 import jax
 
 try:
     jax.distributed.initialize()
-    print(f"[CLUSTER] Worker {jax.process_index()} synchronized successfully inside the v5p mesh.")
+    print(f"[CLUSTER] Worker {jax.process_index()} synchronized successfully inside the mesh.")
 except Exception as e:
     print(f"[CLUSTER REJECT] Multi-node initialization failed: {e}")
     sys.exit(1)
 
 import jax.numpy as jnp
 import tensorcircuit as tc
-import cotengra as ctg
 import time
 import matplotlib.pyplot as plt
 
 # ==========================================
 # 2. POST-INITIALIZATION NUMPY 2.0 PATCH
 # ==========================================
-# Now that the binary C-extensions are safely loaded, patch np.log2 globally
 _orig_log2 = np.log2
 def _safe_log2(x):
     if isinstance(x, (int, float)):
@@ -55,7 +52,7 @@ def initialize_engine():
     is_master = (jax.process_index() == 0)
     if is_master:
         print("====================================================")
-        print("INITIATING 40-QUBIT DIAGNOSTIC ENGINE (TPU v5p-16 Layout)")
+        print("INITIATING 40-QUBIT HIGH-STABILITY ENGINE")
         print("====================================================")
     
     tc.set_backend("jax")
@@ -103,24 +100,12 @@ def build_chaotic_circuit(gate_parameters, depth=20):
     return c
 
 # ==========================================
-# 6. PROTECTIVE TENSOR SLICING (DEADLOCK PROOF)
+# 6. HIGH-STABILITY AUTOMATED CONTRACTOR
 # ==========================================
-opt = ctg.ReusableHyperOptimizer(
-    methods=["greedy"],
-    minimize="size",
-    max_repeats=8,
-    slicing_opts={"target_size": 2**23},
-    progbar=False,
-    parallel=False  # Crucial fix: Stops os.fork() from deadlocking multi-threaded JAX
-)
-
-try:
-    tc.set_contractor("custom", optimizer=opt, preprocessing=True)
-    if jax.process_index() == 0:
-        print("[SYSTEM] Single-threaded memory protection initialized.")
-except Exception as e:
-    print(f"[FATAL ERROR] Contractor initialization failed: {e}")
-    sys.exit(1)
+# Switching to 'auto' avoids fragmentation that overflows XLA layout engines
+tc.set_contractor("auto")
+if jax.process_index() == 0:
+    print("[SYSTEM] High-stability native contractor activated.")
 
 # ==========================================
 # 7. MULTI-CHIP SHARDING ENGINE (vmap + pmap)
@@ -144,9 +129,8 @@ def run_pipeline():
     total_needed_weights = N_QUBITS * 2 * 20
     chaotic_angles = jax.random.uniform(key, shape=(total_needed_weights,), minval=0, maxval=2*jnp.pi)
     
-    # Auto-adjust configuration to the 16-chip hardware metrics
     local_chips = jax.local_device_count() 
-    tasks_per_chip = 16 
+    tasks_per_chip = 4  # Safe batch size to watch the engine clear compilation tracks
     global_states_computed = jax.device_count() * tasks_per_chip 
     
     target_bitstrings = jax.random.randint(
@@ -158,7 +142,7 @@ def run_pipeline():
     execution_times = []
     
     if is_master:
-        print(f"\n[STAGE 1] Triggering Graph Slicing & XLA Compilation...")
+        print(f"\n[STAGE 1] Triggering Graph Optimization & XLA Compilation...")
         print(f"Distributing 40-Qubit tasks across {jax.device_count()} global TPU chips...")
     
     start_compile = time.time()
@@ -167,10 +151,10 @@ def run_pipeline():
         warmup_out.block_until_ready()
         compile_overhead = time.time() - start_compile
         if is_master:
-            print(f"[SUCCESS] 40-Qubit Graph compiled to bare-metal XLA in {compile_overhead:.2f} seconds.\n")
+            print(f"[SUCCESS] 40-Qubit circuit compiled to bare-metal XLA in {compile_overhead:.2f} seconds.\n")
     except RuntimeError as e:
         if is_master:
-            print(f"\n[CRITICAL ERROR] TPU HBM line Overflowed: {e}")
+            print(f"\n[CRITICAL ERROR] Compile pipeline tracking caught an unrecoverable exception: {e}")
         sys.exit(1)
         
     if is_master:
@@ -204,7 +188,7 @@ def run_pipeline():
         print("\n[STAGE 4] Saving Performance Graphs to Disk (`tpu_40qubit_performance.png`)...")
         fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 6))
         
-        ax1.plot(range(1, iterations + 1), execution_times, marker='o', color='#00a2ed', linewidth=2, label='TPU v5p MXU Processing Time')
+        ax1.plot(range(1, iterations + 1), execution_times, marker='o', color='#00a2ed', linewidth=2, label='TPU MXU Processing Time')
         ax1.axhline(y=avg_throughput, color='r', linestyle='--', label=f'Mean Time ({avg_throughput:.2f}s)')
         ax1.set_title("Hardware Processing Velocity Across Warm JIT Runs", fontsize=12, fontweight='bold')
         ax1.set_xlabel("Iteration Number", fontsize=10)
