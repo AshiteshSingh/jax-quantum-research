@@ -6,7 +6,7 @@ import math
 import os
 import sys
 
-# Patch missing legacy ComplexWarning attribute (Safe to do early)
+# Patch missing legacy ComplexWarning attribute 
 if not hasattr(np, "ComplexWarning"):
     import numpy.exceptions
     np.ComplexWarning = numpy.exceptions.ComplexWarning
@@ -17,7 +17,6 @@ os.environ["XLA_FLAGS"] = "--xla_disable_hlo_passes=false"
 # ==========================================
 # 1. IMPORT JAX & INITIALIZE CLUSTER
 # ==========================================
-# JAX and ml_dtypes initialize here with a 100% untouched, pristine NumPy!
 import jax
 
 try:
@@ -36,8 +35,6 @@ import matplotlib.pyplot as plt
 # ==========================================
 # 2. POST-INITIALIZATION NUMPY 2.0 PATCH
 # ==========================================
-# Now that the binary C-extensions are safely loaded into memory, 
-# we can safely intercept np.log2 to protect TensorCircuit's graph compiler.
 _orig_log2 = np.log2
 def _safe_log2(x):
     if isinstance(x, (int, float)):
@@ -55,23 +52,20 @@ def initialize_engine():
     is_master = (jax.process_index() == 0)
     if is_master:
         print("====================================================")
-        print("INITIATING 75-QUBIT EXTREME CHAOS ENGINE (TPU v5e-16)")
+        print("INITIATING 75-QUBIT SYCAMORE PATCH VERIFICATION (TPU v5e)")
         print("====================================================")
     
     tc.set_backend("jax")
     tc.set_dtype("complex64")
-    
-    if is_master:
-        print(f"[SYSTEM] Global TPU Chips Detected: {jax.device_count()}")
-        print(f"[SYSTEM] Local TPU Chips Per Host: {jax.local_device_count()}")
 
 # ==========================================
-# 4. 75-QUBIT 2D GRID LATTICE GEOMETRY
+# 4. 75-QUBIT PATCH LATTICE GEOMETRY
 # ==========================================
 N_QUBITS = 75
 GRID_ROWS, GRID_COLS = 9, 9
 
-def build_75_qubit_grid():
+def build_75_qubit_patch_grid():
+    """Builds the 2D grid but severs the middle column to allow classical verification."""
     dropped_indices = {0, 8, 72, 80, 4, 76}
     valid_positions = [i for i in range(GRID_ROWS * GRID_COLS) if i not in dropped_indices]
     coordinate_mapping = {raw_pos: clean_id for clean_id, raw_pos in enumerate(valid_positions)}
@@ -79,13 +73,20 @@ def build_75_qubit_grid():
     edges = []
     for pos in valid_positions:
         r, c = divmod(pos, GRID_COLS)
+        
+        # 2D HORIZONTAL LINK (WITH GOOGLE'S SUPREMACY PATCH CUT)
         if c + 1 < GRID_COLS and (pos + 1) in coordinate_mapping:
-            edges.append((coordinate_mapping[pos], coordinate_mapping[pos + 1]))
+            # We cut all entangling links crossing column 4
+            if c != 4: 
+                edges.append((coordinate_mapping[pos], coordinate_mapping[pos + 1]))
+                
+        # 2D VERTICAL LINK
         if r + 1 < GRID_ROWS and (pos + GRID_COLS) in coordinate_mapping:
             edges.append((coordinate_mapping[pos], coordinate_mapping[pos + GRID_COLS]))
+            
     return edges
 
-LATTICE_EDGES = build_75_qubit_grid()
+LATTICE_EDGES = build_75_qubit_patch_grid()
 
 # ==========================================
 # 5. EXTREME CHAOS WAVE MECHANICS (RCS)
@@ -155,7 +156,7 @@ def run_pipeline():
     
     if is_master:
         print(f"\n[STAGE 1] Triggering Graph Slicing & XLA Compilation...")
-        print(f"Distributing tasks across {jax.device_count()} global TPU chips...")
+        print(f"Distributing 75-Qubit Patch tasks across {jax.device_count()} global TPU chips...")
     
     start_compile = time.time()
     try:
@@ -163,10 +164,10 @@ def run_pipeline():
         warmup_out.block_until_ready()
         compile_overhead = time.time() - start_compile
         if is_master:
-            print(f"[SUCCESS] 75-Qubit Graph compiled to bare-metal XLA in {compile_overhead:.2f} seconds.\n")
+            print(f"[SUCCESS] 75-Qubit Patch Graph compiled to bare-metal XLA in {compile_overhead:.2f} seconds.\n")
     except RuntimeError as e:
         if is_master:
-            print(f"\n[CRITICAL OUT OF MEMORY] TPU v5e HBM2 line Overflowed: {e}")
+            print(f"\n[CRITICAL ERROR] TPU v5e HBM2 line Overflowed: {e}")
         sys.exit(1)
         
     if is_master:
