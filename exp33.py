@@ -2,7 +2,7 @@ import os
 import time
 import functools
 import jax
-import jax.numpy jnp
+import jax.numpy as jnp
 from jax.sharding import Mesh, PartitionSpec as P, NamedSharding
 from jax.experimental import mesh_utils
 from jax.experimental.shard_map import shard_map
