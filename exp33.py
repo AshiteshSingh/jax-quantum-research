@@ -24,7 +24,7 @@ state_sharding = NamedSharding(mesh, P('q31', 'q30', None))
 NUM_QUBITS = 32
 STATE_SIZE = 1 << NUM_QUBITS  
 
-print(f"Allocating static 32-qubit state vector (34.36 GB) across 2D mesh layout...")
+print(f"Allocating static 32-qubit state vector ({STATE_SIZE * 8 / 1e9:.2f} GB) across 2D mesh layout...")
 
 # -------------------------------------------------------------------------
 # 2. IN-PLACE SHARDED INITIALIZATION
@@ -41,8 +41,10 @@ jax.block_until_ready(state)
 print("State vector successfully sharded across 2D TPU HBM pools.")
 
 # -------------------------------------------------------------------------
-# 3. TOPOLOGY-AWARE SHARD_MAP GATE OPERATORS
+# 3. TOPOLOGY-AWARE IN-PLACE MEMORY DONATED GATE OPERATORS
 # -------------------------------------------------------------------------
+# FIX: Added donate_argnums=0 to guarantee zero-copy buffer reuse at runtime
+@functools.partial(jax.jit, static_argnums=2, donate_argnums=0)
 def apply_1q_gate(state_vec, gate_matrix, target):
     if target < 30:
         # Local Qubits: Run 100% on-chip with absolute zero communication
@@ -56,7 +58,7 @@ def apply_1q_gate(state_vec, gate_matrix, target):
         return local_1q(state_vec)
         
     elif target == 30:
-        # Global Qubit 30: Un-shard only the q30 axis (Safe 16GB temporary ceiling)
+        # Global Qubit 30: Un-shard only the q30 axis
         @functools.partial(shard_map, mesh=mesh, in_specs=P('q31', None, None), out_specs=P('q31', 'q30', None))
         def global_30(local_state):
             return jnp.einsum('ij,jb->ib', gate_matrix, local_state)
@@ -69,6 +71,8 @@ def apply_1q_gate(state_vec, gate_matrix, target):
             return jnp.einsum('ij,jb->ib', gate_matrix, local_state)
         return global_31(state_vec)
 
+# FIX: Added donate_argnums=0 to prevent memory replication during CNOT transformations
+@functools.partial(jax.jit, static_argnums=(1, 2), donate_argnums=0)
 def apply_cnot(state_vec, control, target):
     X_gate = jnp.array([[0.0, 1.0], [1.0, 0.0]], dtype=jnp.complex64)
     
@@ -90,7 +94,6 @@ def apply_cnot(state_vec, control, target):
         
     # CASE 2: Global Control, Local Target
     elif control >= 30 and target < 30:
-        mesh_axis = 'q31' if control == 31 else 'q30'
         in_spec = P(None, 'q30', None) if control == 31 else P('q31', None, None)
         
         @functools.partial(shard_map, mesh=mesh, in_specs=in_spec, out_specs=P('q31', 'q30', None))
@@ -103,7 +106,6 @@ def apply_cnot(state_vec, control, target):
         
     # CASE 3: Local Control, Global Target
     elif control < 30 and target >= 30:
-        mesh_axis = 'q31' if target == 31 else 'q30'
         in_spec = P(None, 'q30', None) if target == 31 else P('q31', None, None)
         
         @functools.partial(shard_map, mesh=mesh, in_specs=in_spec, out_specs=P('q31', 'q30', None))
