@@ -5,6 +5,16 @@ import numpy as np
 import os
 import sys
 
+
+try:
+    jax.distributed.initialize()
+    print(f"[CLUSTER] Worker {jax.process_index()} initialized successfully inside the 4-node mesh.")
+except Exception as e:
+    print(f"[CLUSTER REJECT] Multi-node initialization failed: {e}")
+    sys.exit(1)
+
+
+
 # Patch missing legacy attribute in NumPy 2.0 before importing TensorCircuit
 if not hasattr(np, "ComplexWarning"):
     import numpy.exceptions
