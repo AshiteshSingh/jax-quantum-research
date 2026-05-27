@@ -55,7 +55,7 @@ def initialize_engine():
     is_master = (jax.process_index() == 0)
     if is_master:
         print("====================================================")
-        print("INITIATING 40-QUBIT DIAGNOSTIC ENGINE (TPU v5p-32)")
+        print("INITIATING 40-QUBIT DIAGNOSTIC ENGINE (TPU v5p-16 Layout)")
         print("====================================================")
     
     tc.set_backend("jax")
@@ -103,18 +103,24 @@ def build_chaotic_circuit(gate_parameters, depth=20):
     return c
 
 # ==========================================
-# 6. PROTECTIVE TENSOR SLICING
+# 6. PROTECTIVE TENSOR SLICING (DEADLOCK PROOF)
 # ==========================================
 opt = ctg.ReusableHyperOptimizer(
     methods=["greedy"],
     minimize="size",
     max_repeats=8,
     slicing_opts={"target_size": 2**23},
-    progbar=False
+    progbar=False,
+    parallel=False  # Crucial fix: Stops os.fork() from deadlocking multi-threaded JAX
 )
-tc.set_contractor("custom", optimizer=opt, preprocessing=True)
-if jax.process_index() == 0:
-    print("[SYSTEM] Memory protection armor initialized via Cotengra Slicing.")
+
+try:
+    tc.set_contractor("custom", optimizer=opt, preprocessing=True)
+    if jax.process_index() == 0:
+        print("[SYSTEM] Single-threaded memory protection initialized.")
+except Exception as e:
+    print(f"[FATAL ERROR] Contractor initialization failed: {e}")
+    sys.exit(1)
 
 # ==========================================
 # 7. MULTI-CHIP SHARDING ENGINE (vmap + pmap)
@@ -138,7 +144,7 @@ def run_pipeline():
     total_needed_weights = N_QUBITS * 2 * 20
     chaotic_angles = jax.random.uniform(key, shape=(total_needed_weights,), minval=0, maxval=2*jnp.pi)
     
-    # Dynamic topology mapping for the v5p architecture
+    # Auto-adjust configuration to the 16-chip hardware metrics
     local_chips = jax.local_device_count() 
     tasks_per_chip = 16 
     global_states_computed = jax.device_count() * tasks_per_chip 
