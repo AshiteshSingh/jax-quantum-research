@@ -1,8 +1,8 @@
 import os
 import time
-import functools
 import jax
 import jax.numpy as jnp
+from jax import lax
 from jax.sharding import Mesh, PartitionSpec as P, NamedSharding
 from jax.experimental import mesh_utils
 import matplotlib.pyplot as plt
@@ -16,112 +16,179 @@ devices = jax.devices()
 num_devices = len(devices)
 assert num_devices == 4, f"Expected 4 TPU chips for v6e-4, found {num_devices}."
 
-# Define a clean 1D mesh spanning across the 4 physical TPU chips
-mesh = Mesh(mesh_utils.create_device_mesh((4,)), axis_names=('chips',))
-state_sharding = NamedSharding(mesh, P('chips', None))
+mesh = Mesh(mesh_utils.create_device_mesh((4,)), axis_names=("chips",))
+state_sharding = NamedSharding(mesh, P("chips", None))
 
 NUM_QUBITS = 32
-STATE_SIZE = 1 << NUM_QUBITS  
+LOCAL_QUBITS = 30
+STATE_SIZE = 1 << NUM_QUBITS
+LOCAL_SIZE = 1 << LOCAL_QUBITS
 
-print(f"Allocating static 32-qubit state vector ({STATE_SIZE * 8 / 1e9:.2f} GB) across 1D mesh...")
+total_gib = (STATE_SIZE * np.dtype(np.complex64).itemsize) / (1024**3)
+per_chip_gib = total_gib / 4.0
+
+print(
+    f"Allocating exact 32-qubit state vector: {total_gib:.2f} GiB total "
+    f"({per_chip_gib:.2f} GiB per chip across 4 TPU chips)."
+)
 
 # -------------------------------------------------------------------------
 # 2. IN-PLACE SHARDED INITIALIZATION
 # -------------------------------------------------------------------------
-@jax.jit
 def init_ground_state():
-    # Allocates exactly 8 GB per chip cleanly with zero host memory overhead
-    state_vec = jnp.zeros((4, 1 << 30), dtype=jnp.complex64)
-    return state_vec.at[0, 0].set(1.0 + 0.0j)
+    # Shape is [4, 2^30] so the total number of amplitudes is 2^32.
+    state_vec = jnp.zeros((4, LOCAL_SIZE), dtype=jnp.complex64)
+    return state_vec.at[0, 0].set(jnp.array(1.0 + 0.0j, dtype=jnp.complex64))
 
 init_ground_state_sharded = jax.jit(init_ground_state, out_shardings=state_sharding)
+
 state = init_ground_state_sharded()
 jax.block_until_ready(state)
 print("State vector successfully sharded across TPU HBM pools.")
 
 # -------------------------------------------------------------------------
-# 3. HIGH-PERFORMANCE ZERO-COPY EINSUM GATE OPERATORS
+# 3. GATE OPERATORS
+#    Key change:
+#    - target/control are NOT static anymore
+#    - we use lax.switch so TPU compiles once instead of once per qubit/pair
 # -------------------------------------------------------------------------
-@functools.partial(jax.jit, static_argnums=2, donate_argnums=0)
-def apply_1q_gate(state_vec, gate_matrix, target):
-    if target < 30:
-        # Local Qubit: Axis 0 remains passive, avoiding cross-chip communication
-        left = 1 << target
-        right = 1 << (30 - target - 1)
-        tensor = state_vec.reshape((4, left, 2, right))
-        tensor = jnp.einsum('ij,aljb->alib', gate_matrix, tensor)
-        return tensor.reshape((4, 1 << 30))
-    elif target == 30:
-        # Global Qubit 30: Targets the lower bit of the shard configuration
-        tensor = state_vec.reshape((2, 2, 1 << 30))
-        tensor = jnp.einsum('ij,akb->aib', gate_matrix, tensor)
-        return tensor.reshape((4, 1 << 30))
-    elif target == 31:
-        # Global Qubit 31: Targets the upper bit of the shard configuration
-        tensor = state_vec.reshape((2, 2, 1 << 30))
-        tensor = jnp.einsum('ij,kab->iab', gate_matrix, tensor)
-        return tensor.reshape((4, 1 << 30))
+def _make_1q_branch(t):
+    if t < LOCAL_QUBITS:
+        def branch(state_vec, gate_matrix, t=t):
+            left = 1 << t
+            right = 1 << (LOCAL_QUBITS - t - 1)
+            tensor = state_vec.reshape((4, left, 2, right))
+            tensor = jnp.einsum("ij,aljb->alib", gate_matrix, tensor)
+            return tensor.reshape((4, LOCAL_SIZE))
+        return branch
 
-@functools.partial(jax.jit, static_argnums=(1, 2), donate_argnums=0)
-def apply_cnot(state_vec, control, target):
-    cnot_tensor = jnp.array([
+    if t == 30:
+        def branch(state_vec, gate_matrix):
+            tensor = state_vec.reshape((2, 2, LOCAL_SIZE))
+            tensor = jnp.einsum("ij,akb->aib", gate_matrix, tensor)
+            return tensor.reshape((4, LOCAL_SIZE))
+        return branch
+
+    def branch(state_vec, gate_matrix):
+        tensor = state_vec.reshape((2, 2, LOCAL_SIZE))
+        tensor = jnp.einsum("ij,kab->iab", gate_matrix, tensor)
+        return tensor.reshape((4, LOCAL_SIZE))
+    return branch
+
+
+ONE_Q_BRANCHES = tuple(_make_1q_branch(t) for t in range(NUM_QUBITS))
+
+
+def _apply_1q_gate_impl(state_vec, gate_matrix, target):
+    target = jnp.asarray(target, dtype=jnp.int32)
+    target = jnp.clip(target, 0, NUM_QUBITS - 1)
+    return lax.switch(target, ONE_Q_BRANCHES, state_vec, gate_matrix)
+
+
+apply_1q_gate = jax.jit(
+    _apply_1q_gate_impl,
+    donate_argnums=0,
+    out_shardings=state_sharding,
+)
+
+
+CNOT_TENSOR = jnp.array(
+    [
         [[[1, 0], [0, 0]], [[0, 1], [0, 0]]],
-        [[[0, 0], [0, 1]], [[0, 0], [1, 0]]]
-    ], dtype=jnp.complex64)
-    
-    # CASE 1: Both control and target are local qubits
-    if control < 30 and target < 30:
-        low, high = min(control, target), max(control, target)
-        dim1, dim3, dim5 = 1 << low, 1 << (high - low - 1), 1 << (30 - high - 1)
-        tensor = state_vec.reshape((4, dim1, 2, dim3, 2, dim5))
-        if control < target:
-            tensor = jnp.einsum('CTct,alcbtd->aCbTd', cnot_tensor, tensor)
-        else:
-            tensor = jnp.einsum('TCtc,atlbcd->aTbCd', cnot_tensor, tensor)
-        return tensor.reshape((4, 1 << 30))
-        
-    # CASE 2: Global Control, Local Target
-    elif control >= 30 and target < 30:
-        left = 1 << target
-        right = 1 << (30 - target - 1)
-        tensor = state_vec.reshape((2, 2, left, 2, right))
-        if control == 30:
-            tensor = jnp.einsum('CTct,gcltr->gClTr', cnot_tensor, tensor)
-        else:
-            tensor = jnp.einsum('CTct,cgltr->CglTr', cnot_tensor, tensor)
-        return tensor.reshape((4, 1 << 30))
-        
-    # CASE 3: Local Control, Global Target
-    elif control < 30 and target >= 30:
-        left = 1 << control
-        right = 1 << (30 - control - 1)
-        tensor = state_vec.reshape((2, 2, left, 2, right))
-        if target == 30:
-            tensor = jnp.einsum('CTct,gtlcr->gTlCr', cnot_tensor, tensor)
-        else:
-            tensor = jnp.einsum('CTct,gltcr->TglCr', cnot_tensor, tensor)
-        return tensor.reshape((4, 1 << 30))
-        
-    # CASE 4: Both Qubits are Global (30 and 31)
-    else:
-        tensor = state_vec.reshape((2, 2, 1 << 30))
+        [[[0, 0], [0, 1]], [[0, 0], [1, 0]]],
+    ],
+    dtype=jnp.complex64,
+)
+
+
+def _make_cnot_branch(control, target):
+    def branch(state_vec):
+        # Invalid/self-targeted CNOT -> identity
+        if control == target:
+            return state_vec
+
+        # CASE 1: Both control and target are local qubits
+        if control < LOCAL_QUBITS and target < LOCAL_QUBITS:
+            low, high = min(control, target), max(control, target)
+            dim1 = 1 << low
+            dim3 = 1 << (high - low - 1)
+            dim5 = 1 << (LOCAL_QUBITS - high - 1)
+
+            tensor = state_vec.reshape((4, dim1, 2, dim3, 2, dim5))
+            if control < target:
+                tensor = jnp.einsum("CTct,alcbtd->aCbTd", CNOT_TENSOR, tensor)
+            else:
+                tensor = jnp.einsum("TCtc,atlbcd->aTbCd", CNOT_TENSOR, tensor)
+            return tensor.reshape((4, LOCAL_SIZE))
+
+        # CASE 2: Global Control, Local Target
+        if control >= LOCAL_QUBITS and target < LOCAL_QUBITS:
+            left = 1 << target
+            right = 1 << (LOCAL_QUBITS - target - 1)
+            tensor = state_vec.reshape((2, 2, left, 2, right))
+            if control == 30:
+                tensor = jnp.einsum("CTct,gcltr->gClTr", CNOT_TENSOR, tensor)
+            else:
+                tensor = jnp.einsum("CTct,cgltr->CglTr", CNOT_TENSOR, tensor)
+            return tensor.reshape((4, LOCAL_SIZE))
+
+        # CASE 3: Local Control, Global Target
+        if control < LOCAL_QUBITS and target >= LOCAL_QUBITS:
+            left = 1 << control
+            right = 1 << (LOCAL_QUBITS - control - 1)
+            tensor = state_vec.reshape((2, 2, left, 2, right))
+            if target == 30:
+                tensor = jnp.einsum("CTct,gtlcr->gTlCr", CNOT_TENSOR, tensor)
+            else:
+                tensor = jnp.einsum("CTct,gltcr->TglCr", CNOT_TENSOR, tensor)
+            return tensor.reshape((4, LOCAL_SIZE))
+
+        # CASE 4: Both Qubits are Global (30 and 31)
+        tensor = state_vec.reshape((2, 2, LOCAL_SIZE))
         if control == 31 and target == 30:
-            tensor = jnp.einsum('CTct,ctl->CTl', cnot_tensor, tensor)
+            tensor = jnp.einsum("CTct,ctl->CTl", CNOT_TENSOR, tensor)
         else:
-            tensor = jnp.einsum('CTct,tcl->TCl', cnot_tensor, tensor)
-        return tensor.reshape((4, 1 << 30))
+            tensor = jnp.einsum("CTct,tcl->TCl", CNOT_TENSOR, tensor)
+        return tensor.reshape((4, LOCAL_SIZE))
+
+    return branch
+
+
+CNOT_BRANCHES = tuple(
+    _make_cnot_branch(control, target)
+    for control in range(NUM_QUBITS)
+    for target in range(NUM_QUBITS)
+)
+
+
+def _apply_cnot_impl(state_vec, control, target):
+    control = jnp.asarray(control, dtype=jnp.int32)
+    target = jnp.asarray(target, dtype=jnp.int32)
+    control = jnp.clip(control, 0, NUM_QUBITS - 1)
+    target = jnp.clip(target, 0, NUM_QUBITS - 1)
+    case = control * NUM_QUBITS + target
+    return lax.switch(case, CNOT_BRANCHES, state_vec)
+
+
+apply_cnot = jax.jit(
+    _apply_cnot_impl,
+    donate_argnums=0,
+    out_shardings=state_sharding,
+)
 
 # -------------------------------------------------------------------------
 # 4. BENCHMARKING RUN & PERFORMANCE MONITORING
 # -------------------------------------------------------------------------
 print("\nStarting Benchmark Circuit...")
-Hadamard = jnp.array([[1.0, 1.0], [1.0, -1.0]], dtype=jnp.complex64) / jnp.sqrt(2.0)
+Hadamard = jnp.array(
+    [[1.0, 1.0], [1.0, -1.0]],
+    dtype=jnp.complex64,
+) / jnp.sqrt(jnp.array(2.0, dtype=jnp.complex64))
 
 qubit_latencies = []
 gate_depth_times = []
 
-# Warm up the compilation paths for both local and distributed configurations
-print("Compiling XLA graph (Warm-up run)...")
+print("Compiling XLA graph (one-time warm-up)...")
 state = apply_1q_gate(state, Hadamard, 2)
 state = apply_cnot(state, 2, 5)
 state = apply_1q_gate(state, Hadamard, 30)
@@ -137,8 +204,8 @@ for q in range(NUM_QUBITS):
     state = apply_1q_gate(state, Hadamard, q)
     jax.block_until_ready(state)
     t1 = time.perf_counter()
-    
-    latency = (t1 - t0) * 1000  
+
+    latency = (t1 - t0) * 1000
     qubit_latencies.append(latency)
     gate_depth_times.append(time.perf_counter() - start_total)
     print(f"Gate Depth {q+1:02d}: 1Q-Gate on Qubit {q:02d} | Execution Time: {latency:.2f} ms")
@@ -150,10 +217,13 @@ for idx, (ctrl, tgt) in enumerate(cnot_pairs):
     state = apply_cnot(state, ctrl, tgt)
     jax.block_until_ready(state)
     t1 = time.perf_counter()
-    
+
     latency = (t1 - t0) * 1000
     gate_depth_times.append(time.perf_counter() - start_total)
-    print(f"Gate Depth {NUM_QUBITS + idx + 1:02d}: CNOT ctrl={ctrl:02d} tgt={tgt:02d} | Execution Time: {latency:.2f} ms")
+    print(
+        f"Gate Depth {NUM_QUBITS + idx + 1:02d}: "
+        f"CNOT ctrl={ctrl:02d} tgt={tgt:02d} | Execution Time: {latency:.2f} ms"
+    )
 
 end_total = time.perf_counter()
 print(f"\nSimulation complete. Total circuit execution time: {end_total - start_total:.4f} seconds.")
@@ -165,21 +235,21 @@ print("\nGenerating performance diagnostic plots...")
 os.makedirs("metrics", exist_ok=True)
 
 plt.figure(figsize=(10, 5))
-plt.bar(range(NUM_QUBITS), qubit_latencies, color='royalblue', edgecolor='black', alpha=0.85)
-plt.title("TPU v6e-4 Latency Profile by Qubit Index (32 Qubits)", fontsize=14, fontweight='bold')
+plt.bar(range(NUM_QUBITS), qubit_latencies, edgecolor="black", alpha=0.85)
+plt.title("TPU v6e-4 Latency Profile by Qubit Index (32 Qubits)", fontsize=14, fontweight="bold")
 plt.xlabel("Target Qubit Index", fontsize=12)
 plt.ylabel("Execution Latency (ms)", fontsize=12)
-plt.grid(axis='y', linestyle=':', alpha=0.6)
+plt.grid(axis="y", linestyle=":", alpha=0.6)
 plt.tight_layout()
 plt.savefig("metrics/qubit_latency_profile.png", dpi=300)
 plt.close()
 
 plt.figure(figsize=(10, 5))
-plt.plot(range(1, len(gate_depth_times) + 1), gate_depth_times, marker='o', color='forestgreen', linewidth=2)
-plt.title("Total Simulation Run Time vs. Gate Depth", fontsize=14, fontweight='bold')
+plt.plot(range(1, len(gate_depth_times) + 1), gate_depth_times, marker="o", linewidth=2)
+plt.title("Total Simulation Run Time vs. Gate Depth", fontsize=14, fontweight="bold")
 plt.xlabel("Gate Execution Step Depth", fontsize=12)
 plt.ylabel("Cumulative Elapsed Time (s)", fontsize=12)
-plt.grid(True, linestyle=':', alpha=0.6)
+plt.grid(True, linestyle=":", alpha=0.6)
 plt.tight_layout()
 plt.savefig("metrics/runtime_scaling.png", dpi=300)
 plt.close()
