@@ -57,3 +57,25 @@ def RZ(theta):
 def PhaseShift(theta):
     """Phase shift gate by angle theta."""
     return jnp.array([[1.0, 0.0], [0.0, jnp.exp(1j * theta)]], dtype=jnp.complex64)
+
+# ==============================================================================
+# Multi-qubit Gates
+# ==============================================================================
+
+def CNOT():
+    """Controlled-NOT gate (2-qubits)."""
+    return jnp.array([
+        [1.0, 0.0, 0.0, 0.0],
+        [0.0, 1.0, 0.0, 0.0],
+        [0.0, 0.0, 0.0, 1.0],
+        [0.0, 0.0, 1.0, 0.0]
+    ], dtype=jnp.complex64).reshape(2, 2, 2, 2)
+
+def CZ():
+    """Controlled-Z gate (2-qubits)."""
+    return jnp.array([
+        [1.0, 0.0, 0.0, 0.0],
+        [0.0, 1.0, 0.0, 0.0],
+        [0.0, 0.0, 1.0, 0.0],
+        [0.0, 0.0, 0.0, -1.0]
+    ], dtype=jnp.complex64).reshape(2, 2, 2, 2)
