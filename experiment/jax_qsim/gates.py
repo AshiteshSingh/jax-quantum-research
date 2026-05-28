@@ -79,3 +79,21 @@ def CZ():
         [0.0, 0.0, 1.0, 0.0],
         [0.0, 0.0, 0.0, -1.0]
     ], dtype=jnp.complex64).reshape(2, 2, 2, 2)
+
+def SWAP():
+    """SWAP gate (2-qubits)."""
+    return jnp.array([
+        [1.0, 0.0, 0.0, 0.0],
+        [0.0, 0.0, 1.0, 0.0],
+        [0.0, 1.0, 0.0, 0.0],
+        [0.0, 0.0, 0.0, 1.0]
+    ], dtype=jnp.complex64).reshape(2, 2, 2, 2)
+
+def Toffoli():
+    """Toffoli (CCNOT) gate (3-qubits)."""
+    mat = jnp.eye(8, dtype=jnp.complex64)
+    mat = mat.at[6, 6].set(0.0)
+    mat = mat.at[7, 7].set(0.0)
+    mat = mat.at[6, 7].set(1.0)
+    mat = mat.at[7, 6].set(1.0)
+    return mat.reshape(2, 2, 2, 2, 2, 2)
