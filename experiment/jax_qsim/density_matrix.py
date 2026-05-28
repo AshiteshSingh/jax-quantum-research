@@ -106,3 +106,27 @@ def expectation_hamiltonian(rho, hamiltonian):
     for coeff, pauli_string in zip(hamiltonian.coeffs, hamiltonian.pauli_strings):
         exp_val += coeff * expectation_pauli_string(rho, pauli_string)
     return exp_val
+
+class DensityMatrix:
+    """
+    A user-friendly class wrapper around functional density matrix JAX routines.
+    """
+    def __init__(self, num_qubits, data=None):
+        self.num_qubits = num_qubits
+        self.data = data if data is not None else zero_state(num_qubits)
+        
+    def apply_gate(self, gate, target_qubits):
+        self.data = apply_gate(self.data, gate, target_qubits)
+        return self
+        
+    def apply_channel(self, kraus_ops, qubit):
+        self.data = apply_channel_1q(self.data, kraus_ops, qubit)
+        return self
+        
+    def expectation(self, observable):
+        if isinstance(observable, PauliString):
+            return expectation_pauli_string(self.data, observable)
+        elif isinstance(observable, Hamiltonian):
+            return expectation_hamiltonian(self.data, observable)
+        else:
+            raise TypeError("Observable must be PauliString or Hamiltonian")
