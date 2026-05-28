@@ -138,3 +138,48 @@ class Circuit:
         self.ops.append(('phase_shift', (q,), param_index))
         self.num_params = max(self.num_params, param_index + 1)
         return self
+
+    # ==============================================================================
+    # Two-qubit Gates
+    # ==============================================================================
+    def cnot(self, c, t):
+        self.ops.append(('cnot', (c, t), None))
+        return self
+        
+    def cz(self, c, t):
+        self.ops.append(('cz', (c, t), None))
+        return self
+        
+    def swap(self, q1, q2):
+        self.ops.append(('swap', (q1, q2), None))
+        return self
+        
+    # ==============================================================================
+    # Three-qubit Gates
+    # ==============================================================================
+    def toffoli(self, c1, c2, t):
+        self.ops.append(('toffoli', (c1, c2, t), None))
+        return self
+        
+    # ==============================================================================
+    # Controlled Parametric Gates
+    # ==============================================================================
+    def crx(self, c, t, param_index):
+        self.ops.append(('crx', (c, t), param_index))
+        self.num_params = max(self.num_params, param_index + 1)
+        return self
+        
+    def cry(self, c, t, param_index):
+        self.ops.append(('cry', (c, t), param_index))
+        self.num_params = max(self.num_params, param_index + 1)
+        return self
+        
+    def crz(self, c, t, param_index):
+        self.ops.append(('crz', (c, t), param_index))
+        self.num_params = max(self.num_params, param_index + 1)
+        return self
+        
+    def cp(self, c, t, param_index):
+        self.ops.append(('cp', (c, t), param_index))
+        self.num_params = max(self.num_params, param_index + 1)
+        return self
