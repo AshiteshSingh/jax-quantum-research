@@ -39,3 +39,29 @@ def apply_gate(state, gate, target_qubits):
         curr += 1
         
     return jnp.transpose(out, dest)
+
+def expectation_pauli_string(state, pauli_string):
+    """
+    Computes the expectation value <psi| P |psi> for a PauliString P.
+    """
+    n = state.ndim
+    phi = state
+    
+    for q, op in pauli_string.paulis.items():
+        if op == 'X':
+            phi = apply_gate(phi, gates.X(), [q])
+        elif op == 'Y':
+            phi = apply_gate(phi, gates.Y(), [q])
+        elif op == 'Z':
+            phi = apply_gate(phi, gates.Z(), [q])
+            
+    return jnp.real(jnp.vdot(state, phi))
+
+def expectation_hamiltonian(state, hamiltonian):
+    """
+    Computes the expectation value <psi| H |psi> for a Hamiltonian H.
+    """
+    exp_val = 0.0
+    for coeff, pauli_string in zip(hamiltonian.coeffs, hamiltonian.pauli_strings):
+        exp_val += coeff * expectation_pauli_string(state, pauli_string)
+    return exp_val
