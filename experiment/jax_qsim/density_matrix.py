@@ -52,3 +52,15 @@ def phase_damping_kraus(gamma):
     K0 = jnp.array([[1.0, 0.0], [0.0, jnp.sqrt(1.0 - gamma)]], dtype=jnp.complex64)
     K1 = jnp.array([[0.0, 0.0], [0.0, jnp.sqrt(gamma)]], dtype=jnp.complex64)
     return [K0, K1]
+
+def bit_flip_kraus(p):
+    """Kraus operators for the single-qubit bit flip channel."""
+    K0 = jnp.sqrt(1.0 - p) * jnp.eye(2, dtype=jnp.complex64)
+    K1 = jnp.sqrt(p) * gates.X()
+    return [K0, K1]
+
+def phase_flip_kraus(p):
+    """Kraus operators for the single-qubit phase flip channel."""
+    K0 = jnp.sqrt(1.0 - p) * jnp.eye(2, dtype=jnp.complex64)
+    K1 = jnp.sqrt(p) * gates.Z()
+    return [K0, K1]
