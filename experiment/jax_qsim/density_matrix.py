@@ -27,3 +27,16 @@ def apply_gate(rho, gate, target_qubits):
     target_cols = [q + n for q in target_qubits]
     rho = sv_apply_gate(rho, jnp.conj(gate), target_cols)
     return rho
+
+# ==============================================================================
+# Quantum Channels (Noise Models) via Kraus Operators
+# ==============================================================================
+
+def depolarizing_kraus(p):
+    """Kraus operators for the single-qubit depolarizing channel."""
+    s = jnp.sqrt(p / 3.0)
+    K0 = jnp.sqrt(1.0 - p) * jnp.eye(2, dtype=jnp.complex64)
+    K1 = s * gates.X()
+    K2 = s * gates.Y()
+    K3 = s * gates.Z()
+    return [K0, K1, K2, K3]
