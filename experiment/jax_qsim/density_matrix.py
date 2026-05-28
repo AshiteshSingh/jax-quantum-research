@@ -76,3 +76,33 @@ def apply_channel_1q(rho, kraus_ops, qubit):
         temp = sv_apply_gate(temp, jnp.conj(K), [qubit + n])
         out = out + temp
     return out
+
+# ==============================================================================
+# Expectation Values
+# ==============================================================================
+
+def expectation_pauli_string(rho, pauli_string):
+    """
+    Computes the expectation value Tr(P * rho) for a PauliString P.
+    """
+    n = rho.ndim // 2
+    phi = rho
+    for q, op in pauli_string.paulis.items():
+        if op == 'X':
+            phi = sv_apply_gate(phi, gates.X(), [q])
+        elif op == 'Y':
+            phi = sv_apply_gate(phi, gates.Y(), [q])
+        elif op == 'Z':
+            phi = sv_apply_gate(phi, gates.Z(), [q])
+            
+    phi_mat = phi.reshape((2**n, 2**n))
+    return jnp.real(jnp.trace(phi_mat))
+
+def expectation_hamiltonian(rho, hamiltonian):
+    """
+    Computes the expectation value Tr(H * rho) for a Hamiltonian H.
+    """
+    exp_val = 0.0
+    for coeff, pauli_string in zip(hamiltonian.coeffs, hamiltonian.pauli_strings):
+        exp_val += coeff * expectation_pauli_string(rho, pauli_string)
+    return exp_val
