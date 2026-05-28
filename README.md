@@ -824,3 +824,7 @@ This JAX research suite is licensed under the MIT License.
 <div align="center">
 Built with ❤️ by JAX Quantum Computing Researchers
 </div>
+
+
+## Differentiable JAX Simulation Suite (GPU)
+Located under `experiment/`, we have implemented a differentiable statevector and mixed-state density matrix quantum simulator in **pure JAX** demonstrating extreme XLA speedups on GPU.
