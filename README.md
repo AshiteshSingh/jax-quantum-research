@@ -849,3 +849,5 @@ The execution completed in 23.66 ms on GPU compared to 91.03 ms on CPU.
 This speedup factor scales exponentially as qubit counts increase and saturate GPU execution cores.
 
 ### Real-Time Benchmarking Visualizations
+Below are the comparative plots generated in real-time under GPU acceleration:
+
