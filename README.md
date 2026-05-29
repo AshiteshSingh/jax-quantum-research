@@ -869,3 +869,4 @@ pip install --upgrade "jax[cuda12_pip]" -f https://storage.googleapis.com/jax-re
 ```bash
 python benchmarks/benchmark_27q.py
 ```
+3. Run the GPU-only plotter to generate high-resolution graphs:
