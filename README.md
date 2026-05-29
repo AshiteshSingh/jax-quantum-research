@@ -861,3 +861,4 @@ Below are the comparative plots generated in real-time under GPU acceleration:
 ### How to Reproduce Benchmarks Locally
 To run the comprehensive benchmarks on your GPU inside WSL2 or Linux:
 
+1. Ensure JAX is installed with full CUDA 12 support:
