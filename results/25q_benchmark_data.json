@@ -1,0 +1,22 @@
+{
+  "our_jax_qsim": {
+    "compilation": 18.176145792007446,
+    "execution": 15.617232163747152,
+    "status": "success"
+  },
+  "original_jax_qsim": {
+    "compilation": 0.0,
+    "execution": 0.0,
+    "status": "oom_avoided"
+  },
+  "pennylane_jax": {
+    "compilation": 0.0,
+    "execution": 0.0,
+    "status": "failed: module 'jax.core' has no attribute 'is_concrete'"
+  },
+  "pennylane_lightning": {
+    "compilation": 9.12100601196289,
+    "execution": 9.890809138615927,
+    "status": "success"
+  }
+}
