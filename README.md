@@ -837,3 +837,4 @@ This fits comfortably within the local VRAM of consumer GPUs like the NVIDIA GeF
 We conducted exhaustive GPU benchmarks comparing our custom JAX simulator (jax_qsim) against other frameworks.
 
 ### 27-Qubit GPU Speed Comparison
+* jax_qsim (JAX CUDA GPU): 4.61 seconds (Optimized via XLA compiler fusion)
