@@ -828,3 +828,6 @@ Built with ❤️ by JAX Quantum Computing Researchers
 
 ## Differentiable JAX Simulation Suite (GPU)
 Located under `experiment/`, we have implemented a differentiable statevector and mixed-state density matrix quantum simulator in **pure JAX** demonstrating extreme XLA speedups on GPU.
+
+
+## NVIDIA GPU CUDA vs CPU 27-Qubit Performance Comparison
