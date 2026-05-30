@@ -1,5 +1,25 @@
 """
 High-level compiled Circuit builder for the JAX Quantum Circuit Simulation Suite.
+
+The Circuit class accumulates gate operations and compiles them into a single JIT-compiled
+XLA computation graph. All parameters are passed as a flat JAX array, making the circuit
+fully differentiable via jax.grad and batchable via jax.vmap.
+
+Hardware-Efficient Ansatz (HEA) parameter count formula:
+    P = n_qubits * 2 * (n_layers + 1)
+    e.g. 15 qubits, 3 layers: P = 15 * 2 * 4 = 120 parameters
+
+Example:
+    c = Circuit(4)
+    c.ry(0, 0); c.rz(0, 1); c.ry(1, 2); c.rz(1, 3)
+    c.cnot(0, 1); c.cnot(1, 2)
+    params = jnp.zeros(4)
+    state = c.run(params, 'statevector')  # returns (2, 2, 2, 2) complex64 tensor
+
+    # All gradients in one backward pass (vs 2*P circuit evaluations for PSR):
+    loss_fn = lambda p: jnp.abs(c.run(p, 'statevector').reshape(-1)[0]) ** 2
+    grad_fn = jax.jit(jax.grad(loss_fn))
+    grads = grad_fn(params)  # shape (4,)
 """
 
 import functools
