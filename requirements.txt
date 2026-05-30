@@ -1,0 +1,9 @@
+jax>=0.4.25
+jaxlib>=0.4.25
+numpy>=1.24
+matplotlib>=3.7
+scipy>=1.10
+# Optional: for cross-framework benchmarks
+# pennylane>=0.36
+# cirq-core>=1.3
+# tensorcircuit>=0.6  # for 37q RCS tensor-network benchmark (TPU only)

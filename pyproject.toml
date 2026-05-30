@@ -1,0 +1,25 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.backends.legacy:build"
+
+[project]
+name = "jax-qsim"
+version = "0.2.0"
+description = "High-performance differentiable quantum circuit simulator in pure JAX"
+readme = "README.md"
+license = {file = "LICENSE"}
+authors = [{name = "Ashitesh Singh"}]
+requires-python = ">=3.10"
+dependencies = [
+    "jax>=0.4.25",
+    "jaxlib>=0.4.25",
+    "numpy>=1.24",
+]
+
+[project.optional-dependencies]
+benchmark = ["matplotlib>=3.7", "scipy>=1.10"]
+pennylane = ["pennylane>=0.36"]
+
+[project.urls]
+Homepage = "https://github.com/AshiteshSingh/Tpu-Accelerated-Quantum-JAX"
+Repository = "https://github.com/AshiteshSingh/Tpu-Accelerated-Quantum-JAX"
