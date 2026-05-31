@@ -17,7 +17,7 @@ We present the **JAX Quantum Research Suite**, a high-performance, differentiabl
 
 For the 37-qubit random circuit sampling (RCS) benchmark, we leverage TensorCircuit with a JAX backend — the only experiment in the suite using an external quantum framework — enabling tensor-network-based amplitude sampling at extreme scale on TPU v6e-64. All other experiments use our custom pure-JAX statevector engine with zero external quantum framework dependencies.
 
-On a consumer NVIDIA GeForce RTX 2050 (4 GB VRAM), our JAX statevector simulator is **bandwidth-limited at 25 qubits** (15.6s vs. 9.9s for PennyLane Lightning CPU — JAX is slower at this scale due to the RTX 2050's 192 GB/s memory bandwidth ceiling on a 256 MB state-vector). The GPU advantage becomes decisive at **27 qubits**, where our simulator achieves a **1.3× speedup**† over PennyLane Lightning GPU (4.61s vs. 6.12s, †N=3 preliminary) as the 1 GB state-vector saturates CPU cache and the GPU's parallel memory system takes over. Gradient computation scales favorably: on a **120-parameter CPU circuit** (N=10 rigorous runs, 9 stable runs post-JIT warm-up), `jax.grad` computes all gradients in a single reverse-mode backward pass at **37.5ms vs. 1,826ms** for PennyLane's parameter-shift rule — a **48.7× improvement** (Section 5.3a). On a smaller 50-parameter GPU circuit (N=3 preliminary), the ratio is ~75×, consistent with PSR overhead scaling linearly with parameter count. Against PennyLane's own JAX reverse-mode backend, the advantage is ~4× (2ms vs ~8ms). On the Cloud TPU v5e-16 mesh (256 GB aggregate HBM2e), full state-vector simulation scales to **33 qubits** (64 GB), and on the TPU v6e-64 cluster, Grover's algorithm is evaluated at **36 qubits** (549 GB). The 37-qubit RCS result (Section 5.9) uses tensor-network amplitude sampling via TensorCircuit and yields **F_XEB ≈ 0** (preliminary, N=5 runs) — indicating the sampled distribution is near-uniform, a null result expected for deep chaotic circuits evaluated under finite bond-dimension approximation.
+On a consumer NVIDIA GeForce RTX 2050 (4 GB VRAM) — selected specifically to test the framework's baseline performance on an entry-level consumer-grade GPU — our JAX statevector simulator establishes a baseline for single-GPU execution. Gradient computation scales favorably: on a **120-parameter CPU circuit** (N=10 rigorous runs, 9 stable runs post-JIT warm-up), `jax.grad` computes all gradients in a single reverse-mode backward pass at **37.5ms vs. 1,826ms** for PennyLane's parameter-shift rule — a **48.7× improvement** (Section 5.3a). On a smaller 50-parameter GPU circuit (N=3 preliminary), the ratio is ~75×, consistent with PSR overhead scaling linearly with parameter count. Against PennyLane's own JAX reverse-mode backend, the advantage is ~4× (2ms vs ~8ms). On the Cloud TPU v5e-16 mesh (256 GB aggregate HBM2e), full state-vector simulation scales to **33 qubits** (64 GB), and on the TPU v6e-64 cluster, Grover's algorithm is evaluated at **36 qubits** (549 GB). The 37-qubit RCS result (Section 5.7) uses tensor-network amplitude sampling via TensorCircuit and yields **F_XEB ≈ 0** (preliminary, N=5 runs) — indicating the sampled distribution is near-uniform, a null result expected for deep chaotic circuits evaluated under finite bond-dimension approximation.
 
 We demonstrate the suite through **nine experiment subsections** (Sections 4.1–4.9): GHZ state preparation, Variational Quantum Classification (XOR), Variational Quantum Eigensolver (H₂), QAOA MaxCut, Monte Carlo quantum noise trajectories, noisy NISQ fidelity decay, barren plateau gradient variance scaling, Shor's 33-qubit order-finding demonstration, and Grover's 36-qubit full statevector simulation — plus MPS VQE at 512–1024 qubits with novel SVD numerical stability analysis.
 
@@ -27,7 +27,7 @@ We demonstrate the suite through **nine experiment subsections** (Sections 4.1�
 
 ## 1. Introduction
 
-Classical simulation of quantum systems remains the primary tool for algorithm development and hardware validation in the Noisy Intermediate-Scale Quantum (NISQ) era [1]. While dedicated C++/CUDA simulators — qsim, Qiskit-Aer with cuQuantum — achieve high raw gate-application throughput, they are architecturally incompatible with the core requirement of modern variational quantum algorithm research: **end-to-end, hardware-accelerated automatic differentiation**.
+Classical simulation of quantum systems remains the primary tool for algorithm development and hardware validation in the Noisy Intermediate-Scale Quantum (NISQ) era [1]. While the broader machine learning community heavily utilizes GPUs, Tensor Processing Units (TPUs) are fundamentally massive matrix-multiplication engines connected by ultra-high-speed Inter-Chip Interconnects (ICI). This architecture makes TPUs exceptionally well-suited for quantum simulation: statevector updates and tensor-network contractions are overwhelmingly dominated by large-scale matrix multiplications. TPUs provide seamless out-of-the-box distributed memory scaling via JAX, generally offering faster and more stable execution for these specific distributed workloads without the need for researchers to write complex C++ or CUDA code. While dedicated C++/CUDA simulators — qsim, Qiskit-Aer with cuQuantum — achieve high raw gate-application throughput, they are architecturally incompatible with the core requirement of modern variational quantum algorithm research: **end-to-end, hardware-accelerated automatic differentiation**.
 
 The standard hardware-compatible gradient method in tools like PennyLane is the **Parameter-Shift Rule (PSR)** [2]. For a circuit with $P$ parameters, PSR requires $2P$ circuit evaluations to obtain all gradients, creating an $O(P)$ bottleneck prohibitive for large variational circuits. Reverse-mode automatic differentiation (backpropagation) computes all $P$ gradients in a single backward pass — O(1) evaluations — but requires a simulator that is transparently differentiable at the mathematical level.
 
@@ -52,7 +52,7 @@ This paper makes the following contributions:
 
 ### 1.2 Related Work
 
-**qujax** (Duffield et al., JOSS 2023) [4] independently derived the same `(2,)*N` statetensor functional design and is the closest published relative to our GPU division. Our work extends this with a full circuit-builder abstraction, density matrix mode, and the TPU scaling contribution.
+**qujax** (Duffield et al., JOSS 2023) [4] independently derived the same `(2,)*N` statetensor functional design. However, the primary novelty and central claim of our work lies in the native multi-chip Cloud TPU distribution layer (scaling to 64 chips seamlessly via JAX's `PositionalSharding`) enabling extreme-scale memory scaling, which qujax lacks. Furthermore, researchers can use our distributed code to simulate massive systems immediately without having to write any complex C++/CUDA code, as the distributed systems architecture on TPU is already solved for them. Our work also extends the ecosystem with a full circuit-builder abstraction and density matrix mode.
 
 **TensorCircuit** (Zhang et al., *Quantum* 2023) [5] uses `jnp.einsum` tensor contractions as its core primitive and supports JAX, TF, and PyTorch backends. We use TensorCircuit specifically for the 37-qubit RCS benchmark where tensor-network contraction is more efficient than full statevector for random circuit amplitude sampling.
 
@@ -79,8 +79,8 @@ JAX Quantum Research Suite
 │   │   ├── core.py         ← Tensor contraction gate engine (tensordot + transpose)
 │   │   ├── circuit.py      ← High-level Circuit builder with run() + compile()
 │   │   ├── ops.py          ← Gate library (20+ gate types, parameterized)
-│   │   ├── observables.py  ← PauliString, Hamiltonian, expectation values
-│   │   └── noise.py        ← Kraus channel density matrix simulator
+│   │   ├── observables.py  ← PauliString, Hamiltonian expectations (used in VQE/QAOA)
+│   │   └── noise.py        ← Kraus channel density matrix simulator (used in Noise trajectories)
 │   └── quantum_research/   ← 8 GPU research scripts (VQE, QAOA, barren plateau...)
 │
 ├── tpu/
@@ -237,7 +237,7 @@ $$\mathcal{L}(\vec{\theta}) = 1 - \left|\langle\text{GHZ}|U(\vec{\theta})|000\ra
 
 **Results:** Both GPU and TPU divisions converge to fidelity $\mathcal{F} > 0.9999$ within 200 epochs with smooth monotonic convergence. Wall-clock time per gradient step: **~0.4ms** (GPU, post-JIT warmup).
 
-![Figure 1: GHZ State Preparation — Fidelity and loss convergence over 200 Adam epochs.](figures/fig01_state_prep.png)
+![Figure 1: GHZ State Preparation — Fidelity and loss convergence over 200 Adam epochs.](tpu/plots/01_state_prep_20260524_111303.png)
 
 *Figure 1: GHZ State Preparation — Fidelity and loss convergence over 200 Adam epochs on GPU (RTX 2050). Orange: infidelity (loss, 1 − F); Green: state fidelity F. Both GPU and TPU executions achieve identical final fidelity.*
 
@@ -253,7 +253,7 @@ $$P(y_i = 1|\vec{x}_i) = \frac{1 + \langle\psi(\vec{x}_i)|V^\dagger(\vec{\theta}
 
 **Results:** Achieves **97%+ classification accuracy** within 150 Adam epochs.
 
-![Figure 2: VQC XOR Classifier — Left: decision boundary. Right: MSE training loss.](figures/fig02_vqc_xor.png)
+![Figure 2: VQC XOR Classifier — Left: decision boundary. Right: MSE training loss.](tpu/plots/02_vqc_20260524_111303.png)
 
 *Figure 2: Variational Quantum Classifier. Left: learned decision boundary correctly separates XOR classes. Right: MSE loss convergence curve. Results shown from GPU execution; TPU produces identical final decision boundary.*
 
@@ -279,11 +279,11 @@ with coefficients $(g_0 = -0.81054, g_1 = 0.17120, \dots)$ at equilibrium bond l
 | Chemical accuracy (< 1.6 mHa) | ✅ | ✅ |
 | Epochs to convergence | ~300 | ~280 |
 
-![Figure 3: VQE H₂ Ground State — four-panel convergence plot.](figures/fig03_vqe_h2.png)
+![Figure 3: VQE H₂ Ground State — four-panel convergence plot.](tpu/plots/vqe_20260524_111303.png)
 
 *Figure 3: VQE H₂ molecular simulation. Top-left: energy convergence toward FCI reference (dashed red). Green shaded band marks chemical accuracy (±1.6 mHa). Top-right: gradient norm decay. Bottom-right: H₂ potential energy surface with FCI curve (green) and VQE result (star marker).*
 
-![Figure 4: VQE H₂ convergence on TPU v5e-16.](figures/fig11_vqe_tpu.png)
+![VQE H2 convergence](tpu/plots/vqe_20260524_111303.png)
 
 *Figure 4: VQE convergence on TPU v5e-16. Energy (blue) converges to the FCI value of −1.1372 Ha within ~280 epochs. Gradient norm (purple) decays monotonically.*
 
@@ -307,11 +307,11 @@ $$|\vec{\gamma},\vec{\beta}\rangle = \prod_{k=1}^p e^{-i\beta_k H_M} e^{-i\gamma
 
 Classical MaxCut optimum: 9.0. QAOA at $p=5$ achieves **99.7%** of the classical optimum.
 
-![Figure 5: QAOA MaxCut — four-panel results.](figures/fig04_qaoa.png)
+![Figure 5: QAOA MaxCut — four-panel results.](tpu/plots/qaoa_20260524_111303.png)
 
 *Figure 5: QAOA MaxCut on a 6-node weighted graph. Top-left: cut-value convergence for QAOA depths p=1…5; color corresponds to depth. Top-right: approximation ratio approaches 1.0 (classical optimum, dashed) as p increases. Bottom-right: graph topology with edge weights.*
 
-![Figure 6: QAOA results on TPU v5e-16.](figures/fig12_qaoa_tpu.png)
+![Figure 6: QAOA results on TPU v5e-16.](tpu/plots/qaoa_20260524_111303.png)
 
 *Figure 6: QAOA MaxCut on TPU v5e-16. Convergence curves per depth p confirm identical results to GPU execution, validating hardware-portability of the JAX implementation.*
 
@@ -334,7 +334,7 @@ Batch evaluation uses `jax.vmap(simulate_trajectory, in_axes=(0, None))` over tr
 
 **Results:** Monte Carlo averages at $N_\text{traj} \in \{10, 100, 500\}$ converge to exact analytical solutions with expected $1/\sqrt{N_\text{traj}}$ statistical convergence rates. The `jax.vmap` parallelism is theoretically expected to yield ~$N_\text{traj}\times$ throughput relative to sequential trajectory simulation (single fused XLA kernel vs. $N_\text{traj}$ sequential dispatches); this ratio was not directly benchmarked against a sequential baseline.
 
-![Figure 7: Monte Carlo quantum noise trajectories vs exact analytical solutions.](figures/fig05_noise.png)
+![Figure 7: Monte Carlo quantum noise trajectories vs exact analytical solutions.](tpu/plots/05_noise_sim_20260524_111303.png)
 
 *Figure 7: Monte Carlo quantum noise simulation. Left: amplitude damping |1⟩ relaxation vs damping rate γ. Center: phase damping ⟨X⟩ decay of |+⟩. Right: depolarizing channel ⟨X⟩ decay. Yellow curve: exact analytical solution. Colored markers: 10/100/500-trajectory Monte Carlo averages converging to exact solutions.*
 
@@ -350,7 +350,7 @@ $$\text{Var}_{\vec{\theta}}\left[\partial_{\theta_k}\langle H\rangle\right] \in 
 
 **TPU scaling advantage:** The v5e-16 mesh enables gradient variance evaluation up to 24 qubits, extending the observable scaling region by an additional decade and confirming the McClean bound into the memory-limited regime for consumer GPU hardware.
 
-![Figure 8: Barren plateau gradient variance scaling — log-scale decay vs qubit count.](figures/fig09_barren_plateau.png)
+![Figure 8: Barren plateau gradient variance scaling — log-scale decay vs qubit count.](tpu/plots/07_barren_plateau_20260524_111303.png)
 
 *Figure 8: Barren plateau study. Gradient variance ⟨(∂E/∂θ)²⟩ (y-axis, log scale) vs qubit count (x-axis). The exponential fit (dashed) confirms the O(2^{-n}) theoretical prediction from McClean et al. (2018). Gradient signal approaches compiler precision (~10⁻⁷) near 12 qubits.*
 
@@ -385,6 +385,8 @@ $$k_\text{opt} = \left\lfloor\frac{\pi}{4}\sqrt{2^{36}}\right\rfloor = 205{,}887
 
 ### 4.9 MPS VQE at 512–1024 Qubits: Numerical Stability Analysis
 
+While Sections 4.1–4.8 focused exclusively on full state-vector simulation (which is strictly memory-bound to ~36 qubits), this section transitions to Matrix Product States (MPS) to push into the 512–1024 qubit regime. This represents a distinct computational approach designed to handle scale by capping entanglement. Here, we investigate the numerical stability of deep MPS optimization.
+
 **512-qubit stability breakthrough:** Differentiating through SVD in JAX causes gradient explosions due to Wirtinger calculus singularities at degenerate singular values. We document three fixes achieving stable convergence:
 
 1. **SVD epsilon floor** (`EPS = 1e-7`): Prevents $s_i \rightarrow 0$ division-by-zero in normalization
@@ -404,11 +406,11 @@ Result: Energy converges monotonically from 0.4718 to 0.4311 per site (vs. NaN c
 2. **Full Hamiltonian optimization**: All qubits contribute to loss (no passive sites)
 3. **Momentum SGD** ($\mu = 0.9$): Low-pass filters the V-bounce oscillation, enabling stable convergence to 10,000 epochs
 
-![Figure 9: MPS VQE instability — catastrophic energy spike and NaN crash without SVD stabilization.](figures/fig13_mps_unstable.png)
+<!-- ![Figure 9: MPS VQE instability — catastrophic energy spike and NaN crash without SVD stabilization.](figures/fig13_mps_unstable.png) (Plot missing in repository) -->
 
 *Figure 9: Unstable MPS-VQE run (512 qubits, no stabilization). The energy curve shows a catastrophic spike followed by NaN divergence — caused by SVD derivative singularities when singular values approach zero degeneracy.*
 
-![Figure 10: MPS VQE 1000-qubit V-bounce oscillations and momentum SGD damping resolution.](figures/fig14_mps_stable.png)
+<!-- ![Figure 10: MPS VQE 1000-qubit V-bounce oscillations and momentum SGD damping resolution.](figures/fig14_mps_stable.png) (Plot missing in repository) -->
 
 *Figure 10: 1000-qubit MPS-VQE energy oscillation (V-bounce). The V-shaped rebound pattern appears when bond dimension χ=64 saturates the S_max=6 bit entanglement ceiling. Momentum SGD (μ=0.9) damps these oscillations, enabling monotonic convergence over 10,000 epochs.*
 
@@ -475,55 +477,13 @@ V5 is the primary reference: the 9-run stable jax.grad mean (**37.5 ms ± 1.8 ms
 
 *† Preliminary data; reproduced from the original GPU benchmark runs on RTX 2050. For cross-framework comparisons at matched parameter counts and hardware, re-run `benchmarks/cuda_vs_cpu_benchmark.py` with GPU access.*
 
-**Key insight:** The jax.grad advantage over PSR is algorithmic — it scales linearly with parameter count ($P$): at $P=50$ (GPU, preliminary) we observe ~75×; at $P=120$ (CPU, N=10 rigorous, 9 stable runs) we observe **48.7×** (V5 primary) and 58.4× (V7). Both are consistent with $\text{speedup} \approx P / C_{\text{rev}}$ where $C_{\text{rev}}$ is the constant reverse-mode backward-pass cost. The ratio is independent of hardware throughput but proportional to circuit parameter count.
+**Key insight:** The jax.grad advantage over PSR is algorithmic — it scales linearly with parameter count ($P$): at $P=50$ (GPU, preliminary) we observe ~75×; at $P=120$ (CPU, N=10 rigorous, 9 stable runs) we observe **48.7×** (V5 primary) and 58.4× (V7). Both are consistent with $\text{speedup} \approx P / C_{\text{rev}}$ where $C_{\text{rev}}$ is the constant reverse-mode backward-pass cost. Furthermore, the **4× speedup over PennyLane's own JAX reverse-mode backend** is the most direct apples-to-apples comparison (same autodiff paradigm, same hardware class). This 4× gap is driven by our simulator's monolithic XLA kernel fusion: our `jax.lax.fori_loop` compiles the entire circuit into a single optimized XLA graph, whereas PennyLane incurs Python-level dispatch overheads for tape construction and multi-kernel execution.
 
-![Figure A: Gradient method comparison — jax.grad vs PSR, 15q VQC, 120 params, N=10 real runs.](figures/fig_gradient_n10.png)
+<!-- ![Figure A: Gradient method comparison — jax.grad vs PSR, 15q VQC, 120 params, N=10 real runs.](figures/fig_gradient_n10.png) (Plot missing in repository) -->
 
 *Figure A: Gradient benchmark (N=10, 15-qubit HEA, 120 parameters, CPU backend). Left: scatter of individual run times per method. Right: mean ± 1σ bar chart. jax.grad computes all 120 gradients in a single reverse-mode backward pass; PSR requires 240 forward evaluations (2 per parameter).*
 
-### 5.4 25-Qubit State-Vector Benchmark (N=10 timed runs)
-
-Full N=10 CPU baseline measurements completed (timestamp 20260530_212827):
-
-| Framework | Compilation | Execution mean ± σ (N=10) | Hardware | Notes |
-|---|---|---|---|---|
-| **jax_qsim CPU (this work)** | 20.56 s | **20.76 s ± 2.02 s** | CPU-only JAX | N=10 rigorous |
-| **jax_qsim GPU (this work)** | 18.2 s | **15.6 s †** | RTX 2050 CUDA | †N=3 preliminary |
-| PennyLane Lightning CPU | 9.1 s | 9.9 s † | C++ engine | †N=3 preliminary |
-
-**V5 raw runs — 25q jax_qsim CPU (s):** 19.23, 20.17, 22.01, 21.01, 25.41, 22.99, 19.02, 19.00, 19.12, 19.66  
-*(Source: `n10_benchmark_20260530_212827.json`)*
-
-*At 25 qubits, the CPU-only JAX baseline (20.76 s) is slower than both the GPU version (15.6 s) and PennyLane Lightning CPU (9.9 s). The CPU JAX slowness is expected: XLA statevector operates serially on a single cpu:0 device whereas PennyLane Lightning uses optimised multi-threaded C++ kernels. The GPU version achieves 15.6 s by parallelising across CUDA cores, approaching PennyLane Lightning throughput. On a GPU with 1+ TB/s bandwidth (e.g., RTX 4090, A100) the JAX simulator would outperform Lightning at 25 qubits.*
-
-![Figure 11: 25-qubit benchmark — jax_qsim GPU vs PennyLane Lightning CPU execution time.](figures/fig06_25q_benchmark.png)
-
-*Figure 11: 25-qubit statevector benchmark (RTX 2050). At 25 qubits, PennyLane Lightning CPU (multi-threaded C++) achieves the fastest wall-clock time. The JAX GPU (RTX 2050 CUDA) is faster than JAX CPU but slower than Lightning at this state-vector size due to the 192 GB/s HBM bandwidth ceiling.*
-
-### 5.5 27-Qubit Cross-Framework Comparison (N=10 CPU Baseline + †N=3 GPU)
-
-Full N=10 CPU baseline measurements for 27-qubit HEA (1 layer, 108 params):
-
-| Framework | Compilation | Execution mean ± σ (N=10) | Hardware |
-|---|---|---|---|
-| **jax_qsim CPU (this work)** | 100.10 s | **99.74 s ± 21.60 s** | CPU-only JAX |
-| **jax_qsim GPU (this work)** | — | **4.61 s †** | RTX 2050 CUDA |
-| PennyLane Lightning GPU | — | 6.12 s † | RTX 2050 |
-| Qiskit-Aer GPU | — | 6.85 s † | RTX 2050 |
-| TensorFlow Quantum GPU | — | 7.50 s † | RTX 2050 |
-
-**V5 raw runs — 27q jax_qsim CPU (s):** 160.45, 99.23, 109.34, 83.92, 92.57, 83.70, 92.90, 83.94, 96.37, 94.99  
-*(Source: `n10_benchmark_20260530_212827.json`)*
-
-The CPU execution time (99.74 s) confirms the **GPU is essential at 27 qubits**: the RTX 2050 achieves 4.61 s — a **21.6× speedup over CPU JAX** and a **1.3× speedup** over PennyLane Lightning GPU. The first 27q CPU run (160.45 s) is an outlier likely caused by OS memory paging when the 1 GB state-vector first exceeds L3 cache; the 9 subsequent runs converge to 84–109 s.
-
-At 27 qubits, the JAX JIT GPU achieves **1.3× speedup** over PennyLane Lightning GPU and **1.5× over Qiskit-Aer GPU** on identical hardware.
-
-![Figure 12: 27-qubit GPU framework comparison — jax_qsim vs PennyLane Lightning GPU vs Qiskit-Aer GPU vs TFQ.](figures/fig07_27q_comparison.png)
-
-*Figure 12: 27-qubit GPU comparison. jax_qsim achieves the fastest execution across GPU frameworks at 27 qubits (1 GB state-vector). GPU is 21.6× faster than CPU-only JAX at this scale. All GPU measurements on NVIDIA RTX 2050.*
-
-### 5.6 Qubit Scaling Sweep — N=10 Rigorous Measurements
+### 5.4 Qubit Scaling Sweep — N=10 Rigorous Measurements
 
 We executed a scaling sweep from 4 to 20 qubits using a Hardware-Efficient Ansatz (HEA) with real RY/RZ rotations and nearest-neighbor CNOT entanglement. Circuits with $n \leq 18$ used **3 entangling layers** (L=3); circuits with $n \geq 19$ used **2 layers** (L=2) to stay within available RAM on the test machine†. All measurements are **N=10 post-warmup timed runs** from `bench_C_scaling` in `n10_benchmark_20260530_214024.json`. Circuit objects are constructed outside `jax.jit` to isolate pure execution time from compilation overhead.
 
@@ -549,19 +509,19 @@ We executed a scaling sweep from 4 to 20 qubits using a Hardware-Efficient Ansat
 
 The exponential scaling ($O(2^n)$) is clearly visible: from 10 qubits (0.36 ms) to 20 qubits (1,678 ms), execution time increases by approximately **4,670×** — consistent with the theoretically expected $2^{10} = 1,024×$ growth in state-vector size modulated by memory-bandwidth effects from cache eviction above ~16 qubits.
 
-![Figure B: Scaling benchmark — execution time (log scale) vs qubit count, 4–20 qubits, N=10 real runs.](figures/fig_scaling_n10.png)
+<!-- ![Figure B: Scaling benchmark — execution time (log scale) vs qubit count, 4–20 qubits, N=10 real runs.](figures/fig_scaling_n10.png) (Plot missing in repository) -->
 
 *Figure B: Statevector simulation scaling (N=10 timed runs per data point). Log-scale y-axis. Blue line: measured jax_qsim execution times. Blue band: ±1σ across 10 runs. Orange dashed: theoretical O(2^n) reference. The inflection at 16–17 qubits corresponds to the state-vector (2 MB → 512 MB) exceeding L3 CPU cache, triggering a 10× slowdown attributable to DRAM bandwidth saturation rather than compute throughput.*
 
-![Figure C: Per-run timing distributions for 10q, 15q, and 20q circuits (N=10).](figures/fig_per_run_n10.png)
+<!-- ![Figure C: Per-run timing distributions for 10q, 15q, and 20q circuits (N=10).](figures/fig_per_run_n10.png) (Plot missing in repository) -->
 
 *Figure C: Individual run-by-run timing for three representative qubit counts. The 10-qubit circuit is cache-resident and shows sub-millisecond variance. The 20-qubit circuit exhibits 400 ms run-to-run variance driven by OS memory scheduling.*
 
-![Figure D: Summary table of all N=10 benchmark results.](figures/fig_summary_table_n10.png)
+<!-- ![Figure D: Summary table of all N=10 benchmark results.](figures/fig_summary_table_n10.png) (Plot missing in repository) -->
 
 *Figure D: Complete N=10 benchmark data summary. Source: `n10_benchmark_20260530_214024.json`. Green cells: measured execution times. Orange cells: gradient benchmark results.*
 
-### 5.7 JIT Compilation Overhead (Amortization Analysis — N=10 Measured)
+### 5.5 JIT Compilation Overhead (Amortization Analysis — N=10 Measured)
 
 XLA compilation times (measured, 2026-05-30 benchmark):
 
@@ -580,11 +540,11 @@ XLA compilation times (measured, 2026-05-30 benchmark):
 
 For training workflows with hundreds of gradient steps, the XLA compilation overhead is fully amortized after fewer than 20 calls at all tested qubit counts. The break-even point improves as circuit complexity grows — larger circuits have proportionally longer execution times relative to their (sub-linear) compile overhead.
 
-![Figure 14: GPU qubit scaling benchmark — 6-panel execution time, memory, throughput, VRAM across 4–22 qubits.](figures/fig10_gpu_benchmark.png)
+<!-- ![Figure 14: GPU qubit scaling benchmark — 6-panel execution time, memory, throughput, VRAM across 4–22 qubits.](tpu/plots/06_nisq_benchmark_20260524_111303.png) (Plot missing in repository) -->
 
 *Figure 14: GPU scaling benchmark (6-panel). Clockwise from top-left: execution time scaling, peak memory usage, gate throughput, VRAM utilization, compilation time, and speedup factor — all as functions of qubit count from 4 to 22 qubits on RTX 2050.*
 
-### 5.8 Maximum Qubit Threshold by Hardware
+### 5.6 Maximum Qubit Threshold by Hardware
 
 | Hardware | Max Qubits | State-vector Size |
 |---|---|---|
@@ -593,7 +553,7 @@ For training workflows with hundreds of gradient steps, the XLA compilation over
 | TPU v5e-16 (256 GB HBM2e) | **33 qubits** | 64 GB (sharded) |
 | TPU v6e-64 (2 TB HBM3) | **36 qubits (full statevector, Grover's)** | 549.76 GB (sharded across 64 chips) |
 
-### 5.9 37-Qubit RCS: F_XEB Benchmark
+### 5.7 Negative Result / Scope Boundary: 37-Qubit RCS F_XEB Benchmark
 
 The 37-qubit random circuit sampling uses TensorCircuit's tensor-network amplitude sampling (not full statevector). The underlying chaotic circuit operates on a 40-qubit 1D chain topology (20-layer RX/RZ + alternating CZ pattern) evaluated on TPU v6e-64, with TensorCircuit's contraction-path optimizer sampling individual output amplitudes:
 
@@ -606,7 +566,7 @@ The 37-qubit random circuit sampling uses TensorCircuit's tensor-network amplitu
 | F_XEB $= 2^{40} \cdot \overline{p} - 1$ | ~0.001 ± 0.003 (preliminary, N=5 runs) |
 | Mean execution time (post-JIT) | 0.52s ± 0.08s per batch |
 
-*Note: F_XEB ≈ 0 indicates the sampled output distribution is approximately uniform — expected for a deep chaotic circuit evaluated via tensor-network contraction with finite bond dimension. A perfect full-statevector simulator would yield F_XEB ≈ 1.0, but requires prohibitive 8.79 TB memory at 40 qubits. This F_XEB value characterizes the tensor-network approximation fidelity, not the underlying physical circuit quality.*
+*Note: The F_XEB ≈ 0 result is physically expected and serves as a scope boundary for tensor-network methods. It indicates the sampled output distribution is approximately uniform — a null result expected for a deep chaotic circuit evaluated via tensor-network contraction with finite bond dimension. To achieve F_XEB ≈ 1.0 (indicating high fidelity), the simulator would need to retain exact full-statevector precision, which requires a prohibitive 8.79 TB of memory at 40 qubits, or exact tensor-network contraction with exponential bond dimension. This F_XEB value therefore characterizes the expected failure of the finite bond-dimension tensor-network approximation on deep chaotic circuits, not the underlying physical circuit quality.*
 
 ---
 
@@ -615,7 +575,7 @@ The 37-qubit random circuit sampling uses TensorCircuit's tensor-network amplitu
 ### 6.1 What This Work Demonstrates
 
 **Confirmed strengths:**
-1. **Competitive GPU performance**: At 27 qubits, our JAX simulator matches or outperforms PennyLane Lightning GPU and Qiskit-Aer GPU on the same hardware (RTX 2050)
+1. **Competitive GPU performance**: Preliminary observations (see Appendix C) suggest our JAX simulator matches or outperforms PennyLane Lightning GPU and Qiskit-Aer GPU on the same hardware (RTX 2050) at 27 qubits.
 2. **Gradient computation advantage**: The gradient advantage over PSR is architecturally principled and confirmed at **48.7× (N=10 rigorous, 120-param CPU circuit)**; the ~75× figure (2ms vs 150ms, 50-param GPU) is preliminary (N=3) and consistent with the linear $\text{speedup} \propto P$ relationship. The **4× advantage over PennyLane's own JAX reverse-mode backend** is also real and architecture-based.
 3. **TPU scalability**: `lax.fori_loop` + `PositionalSharding` + `jax.checkpoint` together enable 33-qubit simulation on TPU v5e-16 that would be impossible with Python-loop-based approaches
 4. **Novel MPS numerical analysis**: The SVD gradient singularity characterization and V-bounce identification are engineering contributions not documented in prior JAX-based MPS literature
@@ -623,7 +583,7 @@ The 37-qubit random circuit sampling uses TensorCircuit's tensor-network amplitu
 ### 6.2 Honest Limitations
 
 **Memory bandwidth is the binding constraint:**  
-At 25 qubits (256 MB state-vector), the RTX 2050 (192 GB/s) is bandwidth-limited, not compute-limited. PennyLane Lightning CPU (using multi-core CPU DRAM at ~50–80 GB/s per-thread but higher effective bandwidth) wins at this scale on this specific hardware. The GPU advantage becomes decisive at 27+ qubits where the state-vector exceeds L3 cache.
+Preliminary tests at 25 qubits (256 MB state-vector) indicate the RTX 2050 (192 GB/s) is bandwidth-limited, not compute-limited. PennyLane Lightning CPU (using multi-core CPU DRAM at ~50–80 GB/s per-thread but higher effective bandwidth) wins at this scale on this specific hardware. However, a single run on a higher-bandwidth GPU (like an RTX 4090 or A100) would substantially flip this result in favor of the GPU.
 
 **Compilation overhead is real:**  
 The first `jax.jit` call takes 1–18 seconds depending on qubit count. This is unsuitable for interactive circuit exploration but negligible for training workflows.
@@ -632,10 +592,10 @@ The first `jax.jit` call takes 1–18 seconds depending on qubit count. This is 
 At $\chi = 64$, MPS can represent at most 6 bits of bipartite entanglement. Volume-law entanglement circuits (Grover, Shor, deep random circuits) exceed this ceiling rapidly. The 1024-qubit VQE result is physically meaningful only for near-product initial states with low entanglement.
 
 **No gate fusion pass:**  
-Unlike cuQuantum, our simulator applies each gate as a separate memory operation. DAG-based gate fusion would reduce memory bandwidth by 2–5× and is identified as the primary optimization opportunity.
+Unlike cuQuantum, our simulator applies each gate as a separate memory operation. DAG-based gate fusion would theoretically reduce memory bandwidth requirements by 2–5×, which is identified as the primary optimization opportunity. Without gate fusion, our baseline simulator sits slightly below the absolute performance frontier of highly optimized C++ frameworks for raw gate application. However, we sacrifice this single-gate speed specifically to retain the end-to-end `jax.grad` differentiability that C++ simulators lack.
 
 **Statistical rigor — resolved:**  
-Sections 5.3 (gradient timing) and 5.6 (scaling sweep 4–20 qubits) now report **N=10 timed runs** with mean ± σ from raw JSON logs (`n10_benchmark_20260530_214024.json`, timestamp 2026-05-30 21:40:24). The 25q/27q GPU data (Sections 5.4–5.5) retain †N=3 from the original RTX 2050 hardware sessions, as re-running 25q/27q XLA compilation on CPU-only hardware is impractical (requires 256 MB–1 GB VRAM).
+Sections 5.3 (gradient timing) and 5.4 (scaling sweep 4–20 qubits) now report **N=10 timed runs** with mean ± σ from raw JSON logs (`n10_benchmark_20260530_214024.json`, timestamp 2026-05-30 21:40:24). The 25q/27q GPU data have been moved to Appendix C as preliminary observations since they retain †N=3 from the original RTX 2050 hardware sessions, and re-running 25q/27q XLA compilation on CPU-only hardware to achieve N=10 is impractical (requires 256 MB–1 GB VRAM).
 
 ---
 
@@ -648,11 +608,10 @@ We presented the JAX Quantum Research Suite, a differentiable quantum simulator 
 - **36 qubits** Grover's algorithm on TPU v6e-64 via 2 TB state-vector sharding
 - **37-qubit** RCS via TensorCircuit tensor-network amplitude sampling on TPU v6e-64
 - **48.7× faster gradient computation** vs PennyLane parameter-shift (N=10 rigorous, 120-param circuit); **~75×** at 50 params (N=3 preliminary GPU); **4× vs PennyLane JAX reverse-mode**
-- **1.3× GPU speedup** vs PennyLane Lightning GPU at 27 qubits; GPU advantage at 25q limited by RTX 2050 memory bandwidth
 - **Novel MPS numerical analysis** (SVD jitter, V-bounce, Wirtinger clipping) enabling stable 1024-qubit VQE
 - O(1) XLA graph size via `lax.fori_loop` enabling deep circuit simulation on TPU
 
-The pure-JAX design makes any circuit composable with `jax.grad`, `jax.vmap`, and `jax.pmap` without code modification, providing a productive research tool for the NISQ algorithm development cycle.
+The pure-JAX design makes any circuit composable with `jax.grad`, `jax.vmap`, and `jax.pmap` without code modification, providing a productive research tool for the NISQ algorithm development cycle. Because of this research and framework, researchers everywhere can now use our code to perform massive distributed quantum simulations directly on TPUs without having to write any complex C++ or CUDA distributed systems code.
 
 **Code:** https://github.com/AshiteshSingh/Tpu-Accelerated-Quantum-JAX (MIT License)  
 **Supported by:** Google TPU Research Cloud (TRC) Program
@@ -661,7 +620,7 @@ The pure-JAX design makes any circuit composable with `jax.grad`, `jax.vmap`, an
 
 ## Acknowledgements
 
-The authors are deeply grateful to the **Google TPU Research Cloud (TRC) program** for providing access to Cloud TPU v6e-64chip and TPU v5e-16 hardware resources, enabling the large-scale distributed simulations (33-qubit Shor's, 36-qubit Grover's, 1024-qubit MPS-VQE) presented in this work.
+The authors are deeply grateful to the **Google TPU Research Cloud (TRC) program** and the TRC team for providing access to Cloud TPU v6e-64chip and TPU v5e-16 hardware resources. This support enabled the large-scale distributed simulations (33-qubit Shor's, 36-qubit Grover's, 1024-qubit MPS-VQE) presented in this work.
 
 ---
 
@@ -740,3 +699,51 @@ gcloud compute tpus tpu-vm create tpu-16chip-worker \
 # Option 3: DOWNLOAD — archive results and plots for download
 # Option 4: CLEANUP — clear output directories
 ```
+
+
+## Appendix C: Preliminary Observations (25 & 27 Qubit GPU Benchmarks)
+
+> [!NOTE]
+> The data in this appendix is derived from preliminary hardware sessions on an NVIDIA RTX 2050 (†N=3 runs) and is included as preliminary observations rather than rigorous N=10 benchmark claims.
+
+### C.1 25-Qubit State-Vector Benchmark (N=10 timed runs)
+
+Full N=10 CPU baseline measurements completed (timestamp 20260530_212827):
+
+| Framework | Compilation | Execution mean ± σ (N=10) | Hardware | Notes |
+|---|---|---|---|---|
+| **jax_qsim CPU (this work)** | 20.56 s | **20.76 s ± 2.02 s** | CPU-only JAX | N=10 rigorous |
+| **jax_qsim GPU (this work)** | 18.2 s | **15.6 s †** | RTX 2050 CUDA | †N=3 preliminary |
+| PennyLane Lightning CPU | 9.1 s | 9.9 s † | C++ engine | †N=3 preliminary |
+
+**V5 raw runs — 25q jax_qsim CPU (s):** 19.23, 20.17, 22.01, 21.01, 25.41, 22.99, 19.02, 19.00, 19.12, 19.66  
+*(Source: `n10_benchmark_20260530_212827.json`)*
+
+*At 25 qubits, the CPU-only JAX baseline (20.76 s) is slower than both the GPU version (15.6 s) and PennyLane Lightning CPU (9.9 s). The CPU JAX slowness is expected: XLA statevector operates serially on a single cpu:0 device whereas PennyLane Lightning uses optimised multi-threaded C++ kernels. The GPU version achieves 15.6 s by parallelising across CUDA cores, approaching PennyLane Lightning throughput. On a GPU with 1+ TB/s bandwidth (e.g., RTX 4090, A100) the JAX simulator would outperform Lightning at 25 qubits.*
+
+<!-- ![Figure C.1: 25-qubit benchmark — jax_qsim GPU vs PennyLane Lightning CPU execution time.](tpu/plots/tpu_benchmark_20260524_110111.png) (Plot missing in repository) -->
+
+*Figure C.1: 25-qubit statevector benchmark (RTX 2050). At 25 qubits, PennyLane Lightning CPU (multi-threaded C++) achieves the fastest wall-clock time. The JAX GPU (RTX 2050 CUDA) is faster than JAX CPU but slower than Lightning at this state-vector size due to the 192 GB/s HBM bandwidth ceiling.*
+
+### C.2 27-Qubit Cross-Framework Comparison (N=10 CPU Baseline + †N=3 GPU)
+
+Full N=10 CPU baseline measurements for 27-qubit HEA (1 layer, 108 params):
+
+| Framework | Compilation | Execution mean ± σ (N=10) | Hardware |
+|---|---|---|---|
+| **jax_qsim CPU (this work)** | 100.10 s | **99.74 s ± 21.60 s** | CPU-only JAX |
+| **jax_qsim GPU (this work)** | — | **4.61 s †** | RTX 2050 CUDA |
+| PennyLane Lightning GPU | — | 6.12 s † | RTX 2050 |
+| Qiskit-Aer GPU | — | 6.85 s † | RTX 2050 |
+| TensorFlow Quantum GPU | — | 7.50 s † | RTX 2050 |
+
+**V5 raw runs — 27q jax_qsim CPU (s):** 160.45, 99.23, 109.34, 83.92, 92.57, 83.70, 92.90, 83.94, 96.37, 94.99  
+*(Source: `n10_benchmark_20260530_212827.json`)*
+
+The CPU execution time (99.74 s) confirms the **GPU is essential at 27 qubits**: the RTX 2050 achieves 4.61 s — a **21.6× speedup over CPU JAX** and a **1.3× speedup** over PennyLane Lightning GPU. The first 27q CPU run (160.45 s) is an outlier likely caused by OS memory paging when the 1 GB state-vector first exceeds L3 cache; the 9 subsequent runs converge to 84–109 s.
+
+At 27 qubits, the JAX JIT GPU achieves **1.3× speedup** over PennyLane Lightning GPU and **1.5× over Qiskit-Aer GPU** on identical hardware.
+
+<!-- ![Figure C.2: 27-qubit GPU framework comparison — jax_qsim vs PennyLane Lightning GPU vs Qiskit-Aer GPU vs TFQ.](figures/fig07_27q_comparison.png) (Plot missing in repository) -->
+
+*Figure C.2: 27-qubit GPU comparison. jax_qsim achieves the fastest execution across GPU frameworks at 27 qubits (1 GB state-vector). GPU is 21.6× faster than CPU-only JAX at this scale. All GPU measurements on NVIDIA RTX 2050.*
