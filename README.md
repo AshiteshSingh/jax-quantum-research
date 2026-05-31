@@ -27,6 +27,9 @@ Execute differentiable, noise-resilient, and large-scale quantum circuits accele
 > [!IMPORTANT]
 > **Researched deeply on Google Cloud TPU v6e-64chip and v5e-16 VM clusters, demonstrated up to 36 qubits (549.76 GB state-vector footprint across 64 chips). Generously supported by Google's TPU Research Cloud (TRC) program.** High-speed Inter-Chip Interconnects (ICI) and distributed JAX positional sharding enable state-vector scaling with maximum throughput.
 
+> [!NOTE]
+> **The Core Innovation:** While frameworks like `qujax` independently derived a similar statetensor functional design, the primary novelty and central claim of our work lies in the **native multi-chip Cloud TPU distribution layer**. Because of our architecture, researchers can use our distributed code to simulate massive systems (like 36-qubit statevectors) immediately, without having to write any complex C++/CUDA distributed-systems code—the scaling architecture on TPU is already solved for them.
+
 </div>
 
 ---
