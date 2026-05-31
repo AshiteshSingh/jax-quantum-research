@@ -20,16 +20,30 @@ htmlcov/
 .DS_Store
 Thumbs.db
 
-# Research Results (raw data can be ignored to keep repo lightweight, or committed if desired)
-# We ignore raw json and csv logs, but keep the folder structure
+# Research Results (raw data — keep folder structure, ignore large data files)
 results/*.json
 results/*.csv
 
-# If you want to commit standard result plots, they are under examples/plots
-# Feel free to adjust these paths if you want to push specific raw data runs!
+# Development artifacts — not for public repo
+patch.b64
+patch.diff
+push_and_run.sh
 
-# Exclude 40 Million Qubits files
+# Debug images committed by mistake
+nan.png
+"no nan 4epoch.png"
+"non na 1000qubits3.png"
+"non na 1000qubits3 copy.png"
+
+# Stray root-level experiment files (moved to proper subdirs)
+1000qubits.py
+1000qubits2.py
+512qubits.py
+512qubits.txt
 40mqubits.py
 vqe_40m_dashboard*.png
 vqe_40m_report*.txt
-
+vqe_1024q_v5e16.py
+tpu_examples_runner.py
+run_all.py
+colab_tpu_v5e.ipynb

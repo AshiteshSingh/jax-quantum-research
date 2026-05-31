@@ -99,7 +99,7 @@ def apply_cnot(state, c, t, n):
         if dest[i] is None: dest[i] = k; k += 1
     return jnp.transpose(out, dest)
 
- def H():   return jnp.array([[1,1],[1,-1]], dtype=jnp.complex64)/jnp.sqrt(2.)
+def H():   return jnp.array([[1,1],[1,-1]], dtype=jnp.complex64)/jnp.sqrt(2.)
 def X():   return jnp.array([[0,1],[1,0]], dtype=jnp.complex64)
 def RX(θ): c=jnp.cos(θ/2); s=-1j*jnp.sin(θ/2); return jnp.array([[c,s],[s,c]])
 def RY(θ): c=jnp.cos(θ/2); s=jnp.sin(θ/2);     return jnp.array([[c,-s],[s,c]])

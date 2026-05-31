@@ -25,7 +25,7 @@ Execute differentiable, noise-resilient, and large-scale quantum circuits accele
 ---
 
 > [!IMPORTANT]
-> **Researched deeply on Google Cloud TPU v6e-64chip and v5e-16 VM clusters, reaching a historic peak scale of 40 qubits (8.8 TB state-vector footprint). Generously supported by Google's TPU Research Cloud (TRC) program.** High-speed Inter-Chip Interconnects (ICI) and distributed JAX positional sharding enable state-vector scaling with maximum throughput.
+> **Researched deeply on Google Cloud TPU v6e-64chip and v5e-16 VM clusters, demonstrated up to 36 qubits (549.76 GB state-vector footprint across 64 chips). Generously supported by Google's TPU Research Cloud (TRC) program.** High-speed Inter-Chip Interconnects (ICI) and distributed JAX positional sharding enable state-vector scaling with maximum throughput.
 
 </div>
 
@@ -48,7 +48,7 @@ This simulator was built in **pure JAX** after rigorous evaluation of every main
 | **Gradient Memory Rematerialization** | ✅ `jax.checkpoint` | ❌ No | ❌ No | ⚠️ TF recompute | ⚠️ Activation checkpointing | ❌ No |
 | **Max Qubits on Single Consumer GPU** | ✅ **29 qubits** | ~25 qubits | ~30 qubits* | ~25 qubits | ~25 qubits | ~26 qubits |
 | **Max Qubits on TPU v5e-16 Mesh** | ✅ **33 qubits** | ❌ Not supported | ❌ Not supported | ❌ Not tested | ❌ Not supported | ❌ Not supported |
-| **Max Qubits on TPU v6e-64 Mesh** | ✅ **40 qubits** | ❌ Not supported | ❌ Not supported | ❌ Not supported | ❌ Not supported | ❌ Not supported |
+| **Max Qubits on TPU v6e-64 Mesh** | ✅ **36 qubits** | ❌ Not supported | ❌ Not supported | ❌ Not supported | ❌ Not supported | ❌ Not supported |
 | **Circuit Execution Overhead** | ✅ ~0ms (JIT cache) | ~50–200ms/call | ~100–500ms/call | ~20–100ms/call | ~10–50ms/call | ~1–10ms/call |
 | **State Vector Gate Speed (10-qubit)** | ✅ **~0.01ms** | ~2–5ms | ~1–3ms | ~0.5–2ms | ~0.2–1ms | ~0.5–2ms |
 | **Functional / Composable Design** | ✅ Pure functions | ⚠️ OOP-heavy | ❌ OOP-heavy | ⚠️ Keras layers | ⚠️ Module-based | ✅ Array-level |
@@ -132,31 +132,16 @@ NumPy is the bedrock of scientific Python but is **fundamentally incompatible** 
 
 ---
 
-### 📊 Concrete Speed Benchmarks: JAX vs PennyLane vs Qiskit
+### 📊 Why JAX Wins On Architectural Grounds
 
-The following benchmarks measure **wall-clock time for a single state-vector gate application** and **gradient computation** on the same hardware (NVIDIA RTX 4090, 24 GB VRAM):
+The performance advantage of JAX over other frameworks in this context is structural, not merely empirical:
 
-#### Gate Application Speed (10-qubit, Single CNOT)
-| Framework | First Call (compilation) | Subsequent Calls (cached) |
-| :--- | :--- | :--- |
-| **JAX JIT (this repo)** | ~150ms (XLA compilation) | **~0.008ms** ✅ |
-| PennyLane `default.qubit` | ~2ms | ~1.5ms |
-| PennyLane `lightning.gpu` | ~5ms (CUDA init) | ~0.05ms |
-| Qiskit-Aer (CPU) | ~0.5ms | ~0.3ms |
-| Qiskit-Aer GPU (cuQuantum) | ~10ms (CUDA init) | ~0.02ms |
-| NumPy | ~0.8ms | ~0.8ms |
+- **`jax.grad` (reverse-mode):** Computes gradients w.r.t. **all parameters in one backward pass**. PennyLane's parameter-shift rule requires **2 circuit evaluations per parameter** — for 50 parameters, that's 100 circuit calls versus 1 JAX backward pass.
+- **`jax.jit` compilation:** The first call pays XLA compilation cost (~100–200ms). All subsequent calls hit the compiled XLA cache with near-zero dispatch overhead.
+- **`jax.lax.fori_loop`:** Compiles deep circuit loops to a single hardware instruction block of O(1) graph size. Python `for`-loops unroll into massive XLA DAGs that OOM on the compiler host at 100+ layers.
+- **`jax.vmap`:** Auto-vectorizes entire circuits across batch dimensions at zero code cost.
 
-#### Full Gradient Step Speed (15-qubit VQC, 50 Parameters)
-| Framework | Gradient Method | Time per Step |
-| :--- | :--- | :--- |
-| **JAX JIT + `jax.grad` (this repo)** | Reverse-mode backprop | **~2ms** ✅ |
-| PennyLane (parameter-shift) | 2 evals × 50 params = 100 circuit calls | ~150ms |
-| PennyLane + JAX backend | Reverse-mode (partial) | ~8ms |
-| TensorFlow Quantum | TF GradTape + Cirq | ~45ms |
-| PyTorch `torch.func.grad` | Reverse-mode backprop | ~12ms |
-| NumPy (finite difference) | 2 evals × 50 params | ~900ms |
-
-> **Key Insight:** JAX's reverse-mode `jax.grad` computes gradients w.r.t. **all 50 parameters in a single backward pass** — PennyLane's parameter-shift rule requires **100 separate circuit evaluations** (2 per parameter). At 100+ parameters, the gap becomes an order of magnitude.
+> **Note:** Exact millisecond benchmarks vary by hardware and workload. The architectural advantages above hold regardless of specific timing measurements.
 
 ---
 
@@ -171,7 +156,7 @@ XLA High-Level Operations (HLO)
       ↓  XLA compiler optimizes
 TPU Machine Instructions (HBM3 ops)
       ↓  executes at peak FLOP/s
-Result: 40-qubit state vectors at 8.79 TB scale
+Result: 36-qubit state vectors at 549.76 GB scale (64-chip TPU v6e mesh)
 ```
 
 No other framework achieves this seamless compilation path:
@@ -209,7 +194,7 @@ Designed for local development, interactive algorithm design, and gradient-based
 
 ### 2. ☁️ Cloud TPU Architecture (Distributed Scaling Engine)
 Tailored to high-qubit memory-scaling stress tests on multi-worker distributed clusters (**Google Cloud TPU v5e-16 VM cluster**, 256 GB HBM2e).
-* **Core Suite:** Located under `tpu/tpu_quantum_scale.py` — A self-contained, monolithic compiler-optimized runtime running all 8 core experiments in a single unified execution graph.
+* **Core Suite:** Located under `tpu/tpu_quantum_scale.py` — A self-contained, compiler-optimized runtime running 5 core experiments (GHZ State Prep, VQC, VQE, QAOA, Noise Simulation) in a unified execution file.
 * **Hardware Optimizations:** Utilizes exact multi-device sharding configurations to partition $2^{33}$-amplitude state vectors across physical chips, bypassing the memory limitations of standard single-device systems.
 
 ---
@@ -538,9 +523,9 @@ The two acceleration branches exhibit distinct engineering tradeoffs and compute
 * **Output Plots:** Saves detailed convergence plots to `gpu/plots/`.
 
 ### Distributed Cloud TPU (v6e-64 / v5e-16 Mesh, Up to 2 TB HBM3)
-* **Max Qubits:** **40 qubits** successfully benchmarked ($2^{40} \times 8$ bytes $\approx$ **8.79 Terabytes** distributed state-vector memory footprint).
-* **Scaling Architectures:** Tested and researched deeply on **Google Cloud TPU v6e-64chip** clusters and **TPU v5e-16** topologies. 
-* **Compute Capabilities:** Utilizing distributed PositionalSharding over the High-Speed Inter-Chip Interconnects (ICI) to execute full-state vector operations and bounded Matrix Product State (MPS) tensor network contractions with absolute fidelity.
+* **Max Qubits Demonstrated:** **36 qubits** ($2^{36} \times 8$ bytes $\approx$ **549.76 GB** distributed state-vector memory footprint, sharded across 64 TPU v6e chips at ~8.59 GB per chip).
+* **Scaling Architectures:** Tested and researched on **Google Cloud TPU v6e-64chip** clusters and **TPU v5e-16** topologies.
+* **Compute Capabilities:** Utilizing distributed PositionalSharding over the High-Speed Inter-Chip Interconnects (ICI) to execute full-state vector operations with `shard_map` and `lax.fori_loop`.
 * **Watermarked Graphs:** The benchmark suite saves multi-qubit performance plots (e.g. `tpu_benchmark_[timestamp].png`) containing exact scaling fit laws directly in `tpu/plots/`.
 
 ---
